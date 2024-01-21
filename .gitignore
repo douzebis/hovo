@@ -1,3 +1,13 @@
+# Secrets
+credentials.json
+token.json
+cookies.json
+
+# Misc
+.DS_Store
+.vscode
+*.orig
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

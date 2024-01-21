@@ -3,7 +3,7 @@ A demonstrator for parsing Google docs and Google partner issues
 
 ## Installation
 
-(Tested with python@3.12)
+(Tested with python@3.11)
 
 ```bash
 python3.11 -m venv venv

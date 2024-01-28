@@ -45,7 +45,7 @@ def parse_table(element):
         return
     
     # Is this maybe our description?
-    content = cells[0].get('content')[0]
+    content = cells[0].get('content')
     #text = rse(content)
     if (not BugidVal.matches(content)
         or not TitleVal.matches(content)):
@@ -55,8 +55,9 @@ def parse_table(element):
     state.bugid = BugidVal.extract(content)
     state.inter = InterVal.extract(content)
     state.title = TitleVal.extract(content)
-    if state.mode != state.MODE.ENGAGED:
+    if state.mode != state.ParsingMode.ENGAGED:
         warning(f"Likely missing heading 2 for step {state.bugid['value']}")
+        return
 
 #    bugid['start'] = content[0]['startIndex']
 #    bugid['end'] = bugid['start'] + len(STEP.parse.sub(STEP.PART1, text))
@@ -113,6 +114,7 @@ def parse_table(element):
         font_size=None,
         url=f"{googleapi.BUGANIZER_URL}/issues/{state.bugid0['value']}",
     )
+
     if state.bugid0['text'] != state.bugid0['target']:
         Fixer.replace(
             state.bugid0['target'],
@@ -189,17 +191,17 @@ def parse_table(element):
                 )
             elif option.relabel_row != None:
                 cell = rows[option.row].get('tableCells')[0]
-                Fixer.replace(option.relabel_row, cell['startIndex'] + 1,
-                              cell['endIndex'] - 1)
+                if rse(cell['content'])[:-1] != option.relabel_row:
+                    Fixer.replace(option.relabel_row, cell['startIndex'] + 1,
+                                cell['endIndex'] - 1)
         case _:
             raise click.ClickException(f"unknown mission: {glob.mission}")
 
-    if option.traces:
-        Ansi.flash("*** DUMPING DOC.get_inplace_requests()...")
-        Ansi.flash(json.dumps(Fixer.get_inplace_requests(), indent=2))
-        Ansi.flash("***")
-        Ansi.flash("*** DUMPING DOC.get_moving_requests()...")
-        Ansi.flash(json.dumps(Fixer.get_moving_requests(), indent=2))
+#    if option.traces:
+#        Ansi.flash("\n*** DUMPING DOC.get_inplace_requests()...")
+#        Ansi.flash(json.dumps(Fixer.get_inplace_requests(), indent=2))
+#        Ansi.flash("\n*** DUMPING DOC.get_moving_requests()...")
+#        Ansi.flash(json.dumps(Fixer.get_moving_requests(), indent=2))
     
     # Retrieve Stage
     retrieve_stage(rows)

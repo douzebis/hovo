@@ -2,6 +2,7 @@ __package__ = 'hovo'
 
 import inspect
 import io
+import json
 import re
 import sys
 import zipfile
@@ -84,7 +85,7 @@ def parse_steps_REFACTOR(elements):
                 style = ''
 
             if style == 'HEADING_1':
-                G.Mode = state.MODE.DISENGAGED
+                G.mode = state.ParsingMode.DISENGAGED
 
             if style == 'HEADING_2':
                 parse_h2(element)
@@ -92,8 +93,8 @@ def parse_steps_REFACTOR(elements):
             elif style == 'HEADING_3':
                 parse_h3(element)
 
-            elif (G.Mode == state.MODE.DEPENDS_ON
-                or G.Mode == state.MODE.UNLOCKS):
+            elif (G.mode == state.ParsingMode.DEPENDS_ON
+                or G.mode == state.ParsingMode.UNLOCKS):
                 parse_depend(element)
 
             elems = element.get('paragraph').get('elements')
@@ -167,13 +168,16 @@ def process_hovo():
 
     # Retrieve the document's contents
     try:
-        Ansi.info(f"Loading the Hovo'...")
+        Ansi.info(f"Loading the Hovo...")
         glob.doc = googleapi.docs.documents().get(
             documentId=option.doc_id).execute()
         glob.contents = glob.doc.get('body').get('content')
     except Exception as e:
         Ansi.error(f"Cannot load the Hovo!")
         raise click.ClickException(f"Error: {e}")
+#    with open("mydoc", 'w') as file:
+#        json.dump(glob.doc, file)
+    
 
     # Checking the consistency of the Hovo document
     check_hovo()

@@ -12,7 +12,6 @@ from bs4 import BeautifulSoup
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
 
-import hovo.googleapi
 from hovo import glob, googleapi, option, state
 from hovo.cleanup import cleanup
 from hovo.colors import Ansi
@@ -33,28 +32,30 @@ def parse_steps(elements):
     """
 
     for element in elements:
-        if 'paragraph' in element:
+        if 'paragraph' in element:  
+            elems = element.get('paragraph').get('elements')
             try:
                 style = element['paragraph']['paragraphStyle']['namedStyleType']
+                if style == 'HEADING_1':
+                    glob.commit_step()
+                    continue
+                elif style == 'HEADING_2':
+                    glob.commit_step()
+                    parse_h2(element)
+                    continue
+                elif style == 'HEADING_3':
+                    parse_h3(element)
+                    continue
             except:
-                style = ''
-
-            if style == 'HEADING_1':
-                state.mode = state.MODE.DISENGAGED
-
-            elif style == 'HEADING_2':
-                parse_h2(element)
-
-            elif style == 'HEADING_3':
-                parse_h3(element)
-
-            elif (state.mode == state.MODE.DEPENDS_ON
-                or state.mode == state.MODE.UNLOCKS):
-                parse_depend(element)
-
-            elems = element.get('paragraph').get('elements')
-            for elem in elems:
-                parse_steps(elem)
+                pass
+            if (state.mode == state.ParsingMode.DEPENDS_ON
+                or state.mode == state.ParsingMode.UNLOCKS):
+                parse_depend(elems)
+            #for elem in elems:
+            #    parse_steps(elem)
+        #if (state.mode == state.ParsingMode.DEPENDS_ON
+        #    or state.mode == state.ParsingMode.UNLOCKS):
+        #    parse_depend(element)
 
         elif 'table' in element:
             parse_table(element)
@@ -70,13 +71,30 @@ def check_hovo():
     # Commit the last (possibly pending) step
     glob.commit_step()
 
-    if option.traces:
-        Ansi.flash("*** DUMPING hovo.Steps...")
-        Ansi.flash(json.dumps(glob.steps, indent=2))
-        Ansi.flash("***")
-        Ansi.flash("*** *** DUMPING hovo.Bugs...")
-        Ansi.flash(json.dumps(glob.Bugs, indent=2))
+    # Walk the dependencies one more time to add links to the corresponding
+    # headings if possible (i.e., when the bugid corresponds to a step)
+    for ref in glob.dependencies:
+        step = next((s for s in glob.steps
+                     if s['bugid']['value'] == ref['bugid']['value']), None)
+        url = f"" if step == None else f"#heading={step['headingId']}"
+        Fixer.update_style(
+            ref['title']['start'],
+            ref['title']['end'],
+            url=url,
+        )
 
+    if option.traces:
+        Ansi.flash("\n*** DUMPING HOVO STEPS...")
+        Ansi.flash(json.dumps(glob.steps, indent=2))
+        Ansi.flash("\n*** DUMPING HOVO DEPENDENCIES...")
+        Ansi.flash(json.dumps(glob.dependencies, indent=2))
+
+    if option.traces:
+        Ansi.flash("\n*** DUMPING DOC.get_inplace_requests()...")
+        Ansi.flash(json.dumps(Fixer.get_inplace_requests(), indent=2))
+        Ansi.flash("\n*** DUMPING DOC.get_moving_requests()...")
+        Ansi.flash(json.dumps(Fixer.get_moving_requests(), indent=2))
+        
     if not option.dry_run:
         googleapi.docs.documents().batchUpdate(
             documentId=option.doc_id,

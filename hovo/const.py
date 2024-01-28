@@ -4,7 +4,7 @@ import re
 
 import click
 
-from hovo.structural import rse
+from hovo.structural import rbe, rpe, rse
 
 # == WELL-KNOWN HEADERS ========================================================
 
@@ -73,13 +73,13 @@ class KnownH3:
 SPACE = f'[ \xa0\t]'
 LETTER = f'[^ \xa0\t\r\n]'
 
-class Tok:  # FIXME REMOVE ME
-    MISSINGBUG = '000000000'
-    BUGID = '\d\d\d\d\d\d\d\d\d'
-    SPACE = '[ \xa0\t]'
-    SPACENL = '[ \xa0\n\r\t]'
-    NOSPACE = '[^ \xa0\n\r\t]'
-    NEWLINE = '[\n\r]'
+#class Tok:  # FIXME REMOVE ME
+#    MISSINGBUG = '000000000'
+#    BUGID = '\d\d\d\d\d\d\d\d\d'
+#    SPACE = '[ \xa0\t]'
+#    SPACENL = '[ \xa0\n\r\t]'
+#    NOSPACE = '[^ \xa0\n\r\t]'
+#    NEWLINE = '[\n\r]'
 
 # == PARSING BUGID, INTER, AND TITLE DATA ======================================
 
@@ -100,13 +100,17 @@ class BugidVal:
     PARSER = re.compile(BUGID_AND_TITLE, flags=re.S)
 
     @classmethod
-    def matches(cls, content):
-        return cls.PARSER.search(rse(content)[:-1])
+    def matches(cls, elems):
+        text = rbe(elems)[:-1]
+        res = cls.PARSER.search(text)
+        return res
     
     @classmethod
-    def extract(cls, content):
-        text = rse(content)[:-1]
-        start = content['startIndex']
+    def extract(cls, elems):
+        if not isinstance(elems, list):
+            raise click.ClickException("not a structured element")
+        text = rbe(elems)[:-1]
+        start = elems[0]['startIndex']
         bugid = cls.PARSER.sub(rf"\g<prolog>\g<bugid>", text)
         end = start + len(bugid)
         target = cls.PARSER.sub(rf"\g<bugid>", text)
@@ -136,13 +140,13 @@ class InterVal:
     PARSER = re.compile(BUGID_AND_TITLE, flags=re.S)
 
     @classmethod
-    def matches(cls, content):
-        return cls.PARSER.search(rse(content)[:-1])
+    def matches(cls, elems):
+        return cls.PARSER.search(rbe(elems)[:-1])
     
     @classmethod
-    def extract(cls, content):
-        text = rse(content)[:-1]
-        start = content['startIndex'] \
+    def extract(cls, elems):
+        text = rbe(elems)[:-1]
+        start = elems[0]['startIndex'] \
             + len(cls.PARSER.sub(rf"\g<prolog>\g<bugid>", text))
         inter = cls.PARSER.sub(rf"\g<inter>", text)
         end = start + len(inter)
@@ -170,13 +174,13 @@ class TitleVal:
     PARSER = re.compile(BUGID_AND_TITLE, flags=re.S)
 
     @classmethod
-    def matches(cls, content):
-        return cls.PARSER.search(rse(content)[:-1])
+    def matches(cls, elems):
+        return cls.PARSER.search(rbe(elems)[:-1])
     
     @classmethod
-    def extract(cls, content):
-        text = rse(content)[:-1]
-        start = content['startIndex'] \
+    def extract(cls, elems):
+        text = rbe(elems)[:-1]
+        start = elems[0]['startIndex'] \
             + len(cls.PARSER.sub(rf"\g<prolog>\g<bugid>\g<inter>", text))
         title = cls.PARSER.sub(rf"\g<title>\g<epilog>", text)
         end = start + len(title)
@@ -544,7 +548,8 @@ class S3nsOwnerVal:
             owner = content[0]['paragraph']['elements'][0]\
                     ['person']['personProperties']
         except:
-            raise ValueError("<PERSON>")
+            #raise ValueError("<PERSON>")
+            owner = { 'name': None, 'email': None }
         return {
             'text': '',
             'start': content[0]['startIndex'],
@@ -615,7 +620,8 @@ class GoogleOwnerVal:
             owner = content[0]['paragraph']['elements'][0]\
                     ['person']['personProperties']
         except:
-            raise ValueError("<PERSON>")
+            #raise ValueError("<PERSON>")
+            owner = { 'name': None, 'email': None }
         return {
             'text': '',
             'start': content[0]['startIndex'],
@@ -781,7 +787,7 @@ class EffortKey:
     
 class EffortVal:
     NICKNAME = 'effort'
-    REGEX = rf'(\d+[.]\d*|[?]+|TBD)'
+    REGEX = rf'(\d+[.]?\d*|[?]+|TBD)'
     PARSER = re.compile(
         rf"^(?P<prolog>{SPACE}*)"
         rf"(?P<payload>{REGEX})"
@@ -820,7 +826,7 @@ class EffortVal:
     @classmethod
     def text_to_val(cls, text):
         try:
-            return float(target)
+            return float(text)
         except ValueError:
             return'TBD'
     
@@ -873,7 +879,7 @@ class DurationKey:
     
 class DurationVal:
     NICKNAME = 'duration'
-    REGEX = rf'(\d+[.]\d*|[?]+|TBD)'
+    REGEX = rf'(\d+[.]?\d*|[?]+|TBD)'
     PARSER = re.compile(
         rf"^(?P<prolog>{SPACE}*)"
         rf"(?P<payload>{REGEX})"
@@ -912,7 +918,7 @@ class DurationVal:
     @classmethod
     def text_to_val(cls, text):
         try:
-            return float(target)
+            return float(text)
         except ValueError:
             return'TBD'
     

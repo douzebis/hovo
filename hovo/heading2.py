@@ -7,7 +7,7 @@ from hovo.const import KnownH2
 from hovo.const import BUGID
 from hovo.const import TITLE
 from hovo import option
-from hovo.structural import rse
+from hovo.structural import rpe, rse
 from hovo.buganizer import get_b7r_fields
 from hovo.const import BugidVal
 from hovo.const import InterVal
@@ -16,16 +16,12 @@ from hovo import glob
 from hovo import state
 
 def parse_h2(element):
-
-    # This signals the end of a previous step (if any)
-    # Let's commit it and start anew.
-    glob.commit_step()
-    
     try:
         headingId = element['paragraph']['paragraphStyle']['headingId']
     except:
         headingId = ''
-    text = rse([element])
+    elems = element.get('paragraph').get('elements')
+    text = rpe(elems)
     if headingId != '':
         # Let's look for well-known sections (definition of stages, etc.)
         wellknown = text.strip()
@@ -61,12 +57,14 @@ def parse_h2(element):
                 return
 
     # Is this maybe a new step description?
-    if BugidVal.matches(element) and TitleVal.matches(element):
-        state.mode = state.MODE.ENGAGED
+    t1 = BugidVal.matches(elems)
+    t2 = TitleVal.matches(elems)
+    if t1 and t2:
+        state.mode = state.ParsingMode.ENGAGED
 
-        state.bugid0 = BugidVal.extract(element)
-        state.inter0 = InterVal.extract(element)
-        state.title0 = TitleVal.extract(element)
+        state.bugid0 = BugidVal.extract(elems)
+        state.inter0 = InterVal.extract(elems)
+        state.title0 = TitleVal.extract(elems)
         state.bugid = None
         state.inter = None
         state.title = None
@@ -75,23 +73,9 @@ def parse_h2(element):
         state.depends_on = []
         state.unlocks = []
     
-        Ansi.note(f"Parsing {state.bugid0['target']} "\
+        Ansi.note(f"[{state.bugid0['start']}] "\
+                  f"Parsing {state.bugid0['target']} "\
                   f"{state.title0['target']}...")
         if option.check_buganizer or option.import_buganizer \
             or option.export_maturity:
             state.Buganizer = get_b7r_fields(state.bugid0['value'])
-
-#    # Is this maybe a new step description?
-#    if STEP.parse.search(text):
-#        bugid = BUGID.parse.sub(BUGID.MATCH, STEP.parse.sub(STEP.PART1, text))
-#        title = TITLE.parse.sub(BUGID.MATCH, STEP.parse.sub(STEP.PART2, text))
-#        state.step['bugid'] = bugid
-#        state.step['title'] = title
-#        state.step['headingId'] = headingId
-#        state.step['cmnts'] = []
-#        state.step['depends_on'] = []
-#        state.step['unlocks'] = []
-#        state.mode = state.MODE.ENGAGED
-#        Ansi.print(f"Parsing {state.step['bugid']} {state.step['title']}...", color=Ansi.WHITE, file=sys.stderr)
-#        if option.check_buganizer or option.import_buganizer:
-#            state.Buganizer = get_b7r_fields(bugid)

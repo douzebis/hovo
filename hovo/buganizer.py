@@ -298,10 +298,16 @@ def set_b7r_field(bugid, nickname, value):
 def get_b7r_fields(bugid, force=False):
     global FIELDS
 
-    if not force:
-        bug = next((b for b in B7rCache.bugs if b['bugid'] == bugid), None)
-        if bug != None:
-            return bug
+    try:
+        bug = next(b for b in B7rCache.bugs if b['bugid'] == bugid)
+        if not force: return bug
+        B7rCache.bugs.remove(bug)
+    except StopIteration:
+        pass
+#    if not force:
+#        bug = next((b for b in B7rCache.bugs if b['bugid'] == bugid), None)
+#        if bug != None:
+#            return bug
     bug = {
         'bugid': bugid,
         'issued_at': int(datetime.utcnow().timestamp()),

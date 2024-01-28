@@ -2,27 +2,53 @@ __package__ = 'hovo'
 
 import click
 
-from hovo.const import Tok
-from hovo import glob
+from hovo import glob, googleapi
+from hovo.fixer import Fixer
 
-def bug_register(bugid, bugidStart, bugidEnd,
-                 title, titleStart, titleEnd):
-    global G
-    
-    bug = next((bug for bug in glob.Bugs if bug['bugid'] == bugid), None)
-    if bug != None:
-        if (title != bug['title']
-            and bugid != Tok.MISSINGBUG):
+NO_BUG_ID = '000000000'
+
+def register_dependency(bugid, inter, title):
+    id = bugid['value']
+    ref0 = next((r for r in glob.dependencies
+                 if r['bugid']['value'] == id), None)
+    if ref0 != None:
+        if (title['value'] != ref0['title']['value']
+            and id != NO_BUG_ID):
             raise click.ClickException(
-                f'bug titles for Bug ID {bugid} do not match:\n' +
-                f"{title} versus {bug['title']}")
-    glob.Bugs.append(
+                f"Titles for bugid '{id}' do not match: compare\n"
+                f"- {title['value']}\n"
+                f"- {ref0['title']['value']}")
+    glob.dependencies.append(
         {
             'bugid': bugid,
             'title': title,
-            'bugidStart': bugidStart,
-            'bugidEnd': bugidEnd,
-            'titleStart': titleStart,
-            'titleEnd': titleEnd
-        }
+        })      
+    Fixer.update_style(
+        bugid['start'],
+        bugid['end'],
+        font_size=11,
+        url=f"{googleapi.BUGANIZER_URL}/issues/{bugid['value']}",
     )
+    if bugid['text'] != bugid['target']:
+        Fixer.replace(
+            bugid['target'],
+            bugid['start'],
+            bugid['end'],
+        )
+    Fixer.update_style(
+        inter['start'],
+        inter['end'],
+        url=f"",
+    )
+    if inter['text'] != inter['target']:
+        Fixer.replace(
+            inter['target'],
+            inter['start'],
+            inter['end'],
+        )
+    if title['text'] != title['target']:
+        Fixer.replace(
+            title['target'],
+            title['start'],
+            title['end'],
+        )

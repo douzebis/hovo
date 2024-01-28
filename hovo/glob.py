@@ -12,6 +12,8 @@ doc = None
 contents = None
 warnings = 0
 steps = []
+dependencies = []
+Cmnts = []
 
 areasHeadingId = None
 durationHeadingId = None
@@ -22,11 +24,11 @@ maturityHeadingId = None
 s3nsownersHeadingId = None
 stagesHeadingId = None
 
-Bugs = []
-Cmnts = []
 
 def commit_step():
-    if state.mode != state.MODE.DISENGAGED:
+    global steps
+    
+    if state.mode != state.ParsingMode.DISENGAGED:
         steps.append({
             'headingId':  state.headingId,
             'bugid0':     state.bugid0,
@@ -53,9 +55,9 @@ def commit_step():
             'duration_key': state.duration_key,
             'duration_val': state.duration_val,
 
-            'cmnts':      state.cmnts,
             'depends_on': state.depends_on,
             'unlocks':    state.unlocks,
+            'cmnts':      state.cmnts,
         })
         state.headingId = ''
         state.bugid0 = None
@@ -83,8 +85,8 @@ def commit_step():
         state.duration_key = None
         state.duration_val = None
 
-        state.cmnts = []
         state.depends_on = []
         state.unlocks = []
+        state.cmnts = []
 
-        state.mode = state.MODE.DISENGAGED
+        state.mode = state.ParsingMode.DISENGAGED

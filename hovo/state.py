@@ -1,17 +1,13 @@
 __package__ = 'hovo'
 
-#from hovo.const import MODE
-
-
-class MODE:  # FIXME: rename as ParsingMode
+class ParsingMode:
     DISENGAGED = 0
     ENGAGED = 1
     DEPENDS_ON = 2
     UNLOCKS = 3
 
-mode = MODE.DISENGAGED
+mode = ParsingMode.DISENGAGED
 
-# Values bugid, inter, title are first discovered when hitting a H2.
 headingId = ''
 bugid0 = None
 inter0 = None
@@ -37,12 +33,9 @@ effort_val = None
 duration_key = None
 duration_val = None
 
-
-cmnts = []
 depends_on = []
 unlocks = []
-## Then the full step is discovered when hitting the corresponding table.
-#step = {}
+cmnts = []
 
 Buganizer = {}
 Seen = set()

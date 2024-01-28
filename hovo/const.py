@@ -1,220 +1,1007 @@
 __package__ = 'hovo'
 
-import random
 import re
 
-SCOPES = [
-    'https://www.googleapis.com/auth/documents',
-    'https://www.googleapis.com/auth/drive.readonly',
-    'https://www.googleapis.com/auth/drive.metadata.readonly'
-]
-DISCOVERY_DOC = 'https://docs.googleapis.com/$discovery/rest?version=v1'
-DISCOVERY_DRIVE = 'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'
+import click
 
-class HEADING2:
+from hovo.structural import rse
+
+# == WELL-KNOWN HEADERS ========================================================
+
+class KnownH2:
     STAGES = 'Handoff stages'
     AREAS = 'Handoff areas'
     LEADERS = 'Step leaders'
+    S3NS_OWNERS = 'S3ns owners'
+    GOOGLE_OWNERS = 'Google owners'
     MATURITY = 'SOW maturity'
-    EFFORTS = 'Efforts and durations'
+    EFFORT = 'Efforts and durations'
+    DURATION = 'Efforts and durations'
 
-class COLOR:
-    def rgb(hex_color):
-        return {
-            'red':   int(hex_color[1:3], 16)/255.,
-            'green': int(hex_color[3:5], 16)/255.,
-            'blue':  int(hex_color[5:7], 16)/255.,
-        }
-
-    RANDOM = {'red': random.random(), 'green': random.random(), 'blue': random.random()}
-    ACID_GREEN = rgb('#8FFE09')
-    BLACK = {'red': 0., 'green': 0., 'blue': 0.}
-    GOLD = {'red': 241./255., 'green': 194./255., 'blue': 49./255.}
-    RED = {'red': 1., 'green': 0., 'blue': 0.}
-
-# ANSI escape codes for text colors
-class ACOL:
-    RESET = "\033[0m"
-    RED = "\033[31m"
-    GREEN = "\033[32m"
-    YELLOW = "\033[33m"
-    BLUE = "\033[34m"
-    MAGENTA = "\033[35m"
-    CYAN = "\033[36m"
-    WHITE = "\033[37m"
-    GRAY = "\033[90m"
-    BRIGHT_RED = "\033[91m"
-    BRIGHT_GREEN = "\033[92m"
-    BRIGHT_YELLOW = "\033[93m"
-    BRIGHT_BLUE = "\033[94m"
-    BRIGHT_MAGENTA = "\033[95m"
-    BRIGHT_CYAN = "\033[96m"
-    BRIGHT_WHITE = "\033[97m"
-    @staticmethod
-    def print(message, color=RESET, **kwargs):
-        print(color + message + ACOL.RESET, **kwargs)
-
-
-class MODE:
-    DISENGAGED = 0
-    ENGAGED = 1
-    DEPENDS_ON = 2
-    UNLOCKS = 3
-
-class HEADING3:
+class KnownH3:
     DEPENDS_ON = 'Depends on:'
     UNLOCKS = 'Unlocks:'
 
-class P: # short for PATTERN
+#class STEP:
+#    REGEX = f'^(({Tok.SPACENL}*{Tok.BUGID}){Tok.SPACENL})({Tok.SPACENL}*.*{Tok.NOSPACE}{Tok.SPACENL}*)\n$'
+#    #PART1_START = r'\5'
+#    #PART1_END = r'\3'
+#    PART1 = r'\2'
+#    PART2_START = r'\1'
+#    #PART2_END = r'\1'
+#    PART2 = r'\3'
+#    parse = re.compile(REGEX, flags=re.S)
+#
+#class BUGID:
+#    REGEX = f'^(({Tok.SPACENL}*)({Tok.BUGID}))$'
+#    START = r'\2'
+#    END = r'\1'
+#    MATCH = r'\3'
+#    parse = re.compile(REGEX, flags=re.S)
+#
+#class TITLE:
+#    REGEX = f'^(({Tok.SPACENL}*)(.*{Tok.NOSPACE})){Tok.SPACENL}*$'
+#    START = r'\2'
+#    END = r'\1'
+#    MATCH = r'\3'
+#    parse = re.compile(REGEX, flags=re.S)
+#
+#class Trimmer:
+#    REGEX = f'^(({Tok.SPACENL}*)(.*{Tok.NOSPACE})){Tok.SPACENL}*$'
+#    START = r'\2'
+#    END = r'\1'
+#    MATCH = r'\3'
+#    PARSE = re.compile(REGEX, flags=re.S)
+#
+#    @classmethod
+#    def matches(cls, text):
+#        return cls.PARSE.search(text)
+#    
+#    @classmethod
+#    def get_match(cls, text):
+#        return cls.PARSE.sub(cls.MATCH, text)
+#
+#class SPACES:
+#    REGEX = f'^(()({Tok.SPACENL}*))$'
+#    START = r'\2'
+#    END = r'\1'
+#    MATCH = r'\3'
+#    parse = re.compile(REGEX, flags=re.S)
+
+# == AUXILIARY TOKENS ==========================================================
+
+SPACE = f'[ \xa0\t]'
+LETTER = f'[^ \xa0\t\r\n]'
+
+class Tok:  # FIXME REMOVE ME
     MISSINGBUG = '000000000'
     BUGID = '\d\d\d\d\d\d\d\d\d'
-    SPACE = '[ \xa0\n\r\t]'
+    SPACE = '[ \xa0\t]'
+    SPACENL = '[ \xa0\n\r\t]'
     NOSPACE = '[^ \xa0\n\r\t]'
     NEWLINE = '[\n\r]'
 
-class STEP:
-    REGEX = f'^(({P.SPACE}*{P.BUGID}){P.SPACE})({P.SPACE}*.*{P.NOSPACE}{P.SPACE}*)\n$'
-    #PART1_START = r'\5'
-    #PART1_END = r'\3'
-    PART1 = r'\2'
-    PART2_START = r'\1'
-    #PART2_END = r'\1'
-    PART2 = r'\3'
-    parse = re.compile(REGEX, flags=re.S)
+# == PARSING BUGID, INTER, AND TITLE DATA ======================================
 
-class BUGID:
-    REGEX = f'^(({P.SPACE}*)({P.BUGID}))$'
-    START = r'\2'
-    END = r'\1'
-    MATCH = r'\3'
-    parse = re.compile(REGEX, flags=re.S)
+BUGID = f'\d\d\d\d\d\d\d\d\d'
+INTER = f'{SPACE}+'
+TITLE = f'{LETTER}(({SPACE}|{LETTER})*{LETTER}|)'
+BUGID_AND_TITLE = \
+    f"^"\
+    f"(?P<prolog>({SPACE})*)"\
+    f"(?P<bugid>{BUGID})"\
+    f"(?P<inter>{INTER})"\
+    f"(?P<title>{TITLE})"\
+    f"(?P<epilog>({SPACE})*)"\
+    f"$"
 
-class TITLE:
-    REGEX = f'^(({P.SPACE}*)(.*{P.NOSPACE})){P.SPACE}*$'
-    START = r'\2'
-    END = r'\1'
-    MATCH = r'\3'
-    parse = re.compile(REGEX, flags=re.S)
+class BugidVal:
+    NICKNAME = 'bugid'
+    PARSER = re.compile(BUGID_AND_TITLE, flags=re.S)
 
-class TRIMMER:
-    REGEX = f'^(({P.SPACE}*)(.*{P.NOSPACE})){P.SPACE}*$'
-    START = r'\2'
-    END = r'\1'
-    MATCH = r'\3'
-    parse = re.compile(REGEX, flags=re.S)
+    @classmethod
+    def matches(cls, content):
+        return cls.PARSER.search(rse(content)[:-1])
+    
+    @classmethod
+    def extract(cls, content):
+        text = rse(content)[:-1]
+        start = content['startIndex']
+        bugid = cls.PARSER.sub(rf"\g<prolog>\g<bugid>", text)
+        end = start + len(bugid)
+        target = cls.PARSER.sub(rf"\g<bugid>", text)
+        value = cls.text_to_val(target)
+        return {
+            'text': bugid,
+            'start': start,
+            'end': end,
+            'target': target,
+            'value': value,
+        }
+    
+    @classmethod
+    def text_to_val(cls, text):
+        return text
+    
+    @classmethod
+    def val_to_text(cls, text):
+        return text
+    
+    @classmethod
+    def b7r_to_value(cls, text):
+        return text
 
-class SPACES:
-    REGEX = f'^(()({P.SPACE}*))$'
-    START = r'\2'
-    END = r'\1'
-    MATCH = r'\3'
-    parse = re.compile(REGEX, flags=re.S)
+class InterVal:
+    NICKNAME = 'inter'
+    PARSER = re.compile(BUGID_AND_TITLE, flags=re.S)
 
-class LABEL:
-    STAGE = 'Stage'
-    AREA = 'Area'
-    LEADER = 'Leader'
-    S3NSOWNER = 'S3NS owner'
-    GOOGLEOWNER = 'Google co-owners'
-    MATURITY = 'SOW maturity'
-    MATURITY_VAL = '\u2606\u2606\u2606|\u2605\u2606\u2606|\u2605\u2605\u2606|\u2605\u2605\u2605'
-    EFFORT = 'Effort \\(eng days\\)'
-    EFFORT_VAL = '\d+[.]\d*'
-    DURATION = 'Duration \\(cal days\\)'
-    DURATION_VAL = '\d+[.]\d*'
-    GDURATION = 'Google duration'
-    GDURATION_VAL = '\d+[.]\d*'
+    @classmethod
+    def matches(cls, content):
+        return cls.PARSER.search(rse(content)[:-1])
+    
+    @classmethod
+    def extract(cls, content):
+        text = rse(content)[:-1]
+        start = content['startIndex'] \
+            + len(cls.PARSER.sub(rf"\g<prolog>\g<bugid>", text))
+        inter = cls.PARSER.sub(rf"\g<inter>", text)
+        end = start + len(inter)
+        target = " "
+        value = cls.text_to_val(target)
+        return {
+            'text': inter,
+            'start': start,
+            'end': end,
+            'target': target,
+            'value': value,
+        }
+    
+    @classmethod
+    def text_to_val(cls, text):
+        return text
+    
+    @classmethod
+    def val_to_text(cls, text):
+        return text
 
-class STAGE_KEY:
-    REGEX = f'^(({P.SPACE}*)({LABEL.STAGE})){P.SPACE}*$'
-    START = r'\2'
-    END = r'\1'
-    MATCH = r'\3'
-    parse = re.compile(REGEX, flags=re.S)
 
-class AREA_KEY:
-    REGEX = f'^(({P.SPACE}*)({LABEL.AREA})){P.SPACE}*$'
-    START = r'\2'
-    END = r'\1'
-    MATCH = r'\3'
-    parse = re.compile(REGEX, flags=re.S)
+class TitleVal:
+    NICKNAME = 'title'
+    PARSER = re.compile(BUGID_AND_TITLE, flags=re.S)
 
-class LEADER_KEY:
-    REGEX = f'^(({P.SPACE}*)({LABEL.LEADER})){P.SPACE}*$'
-    START = r'\2'
-    END = r'\1'
-    MATCH = r'\3'
-    parse = re.compile(REGEX, flags=re.S)
+    @classmethod
+    def matches(cls, content):
+        return cls.PARSER.search(rse(content)[:-1])
+    
+    @classmethod
+    def extract(cls, content):
+        text = rse(content)[:-1]
+        start = content['startIndex'] \
+            + len(cls.PARSER.sub(rf"\g<prolog>\g<bugid>\g<inter>", text))
+        title = cls.PARSER.sub(rf"\g<title>\g<epilog>", text)
+        end = start + len(title)
+        target = cls.PARSER.sub(rf"\g<title>", text)
+        value = cls.text_to_val(target)
+        return {
+            'text': title,
+            'start': start,
+            'end': end,
+            'target': target,
+            'value': value,
+        }
+    
+    @classmethod
+    def text_to_val(cls, text):
+        return text
+    
+    @classmethod
+    def val_to_text(cls, text):
+        return text
+    
+    @classmethod
+    def b7r_to_value(cls, text):
+        return text
 
-class S3NSOWNER_KEY:
-    REGEX = f'^(({P.SPACE}*)({LABEL.S3NSOWNER})){P.SPACE}*$'
-    START = r'\2'
-    END = r'\1'
-    MATCH = r'\3'
-    parse = re.compile(REGEX, flags=re.S)
+# ==============================================================================
 
-class GOOGLEOWNER_KEY:
-    REGEX = f'^(({P.SPACE}*)({LABEL.GOOGLEOWNER})){P.SPACE}*$'
-    START = r'\2'
-    END = r'\1'
-    MATCH = r'\3'
-    parse = re.compile(REGEX, flags=re.S)
+#class LABEL:
+#    STAGE = 'Stage'
+#    #AREAS = 'Area'
+#    LEADER = 'Leader'
+#    S3NSOWNER = 'S3NS owner'
+#    GOOGLEOWNER = 'Google co-owners'
+#    MATURITY = 'SOW maturity'
+#    MATURITY_VAL = '\u2606\u2606\u2606|\u2605\u2606\u2606|\u2605\u2605\u2606|\u2605\u2605\u2605'
+#    EFFORT = 'Effort \\(eng days\\)'
+#    EFFORT_VAL = '\d+[.]\d*'
+#    DURATION = 'Duration \\(cal days\\)'
+#    DURATION_VAL = '\d+[.]\d*'
+#    GDURATION = 'Google duration'
+#    GDURATION_VAL = '\d+[.]\d*'
 
-class MATURITY_KEY:
-    REGEX = f'^(({P.SPACE}*)({LABEL.MATURITY})){P.SPACE}*$'
-    START = r'\2'
-    END = r'\1'
-    MATCH = r'\3'
-    parse = re.compile(REGEX, flags=re.S)
+# == PARSING STAGE DATA ========================================================
 
-class MATURITY_VAL:
-    REGEX = f'^(({P.SPACE}*)({LABEL.MATURITY_VAL})){P.SPACE}*$'
-    START = r'\2'
-    END = r'\1'
-    MATCH = r'\3'
-    parse = re.compile(REGEX, flags=re.S)
+class StageKey:
+    REGEX = rf'Stage'
+    PARSER = re.compile(
+        rf"^(?P<prolog>{SPACE}*)"
+        rf"(?P<payload>{REGEX})"
+        rf"(?P<epilog>{SPACE}*)$",
+        flags=re.S)
 
-class EFFORT_KEY:
-    REGEX = f'^(({P.SPACE}*)({LABEL.EFFORT})){P.SPACE}*$'
-    START = r'\2'
-    END = r'\1'
-    MATCH = r'\3'
-    parse = re.compile(REGEX, flags=re.S)
+    @classmethod
+    def matches(cls, content):
+        return cls.PARSER.search(rse(content)[:-1])
+    
+    @classmethod
+    def extract(cls, content):
+        if not isinstance(content, list):
+            raise click.ClickException("Internal error")
+        text = rse(content)[:-1]
+        start = content[0]['startIndex']
+        end = start + len(text)
+        target = cls.PARSER.sub(rf"\g<payload>", text)
+        value = cls.text_to_val(target)
+        return {
+            'text': text,
+            'start': start,
+            'end': end,
+            'target': target,
+            'value': value,
+        }
+    
+    @classmethod
+    def text_to_val(cls, text):
+        return text.strip()
+    
+    @classmethod
+    def val_to_text(cls, text):
+        return text
+    
+class StageVal:
+    NICKNAME = 'stage'
+    REGEX = rf'Prerequisites|Preparation|Handover|Takeover|Control|Hypercare'
+    PARSER = re.compile(
+        rf"^(?P<prolog>{SPACE}*)"
+        rf"(?P<payload>{REGEX})"
+        rf"(?P<epilog>{SPACE}*)$",
+        flags=re.S)
 
-class EFFORT_VAL:
-    REGEX = f'^(({P.SPACE}*)({LABEL.EFFORT_VAL})){P.SPACE}*$'
-    START = r'\2'
-    END = r'\1'
-    MATCH = r'\3'
-    parse = re.compile(REGEX, flags=re.S)
+    @classmethod
+    def matches(cls, content):
+        return cls.PARSER.search(rse(content)[:-1])
+    
+    @classmethod
+    def extract(cls, content):
+        if not isinstance(content, list):
+            raise click.ClickException("Internal error")
+        text = rse(content)[:-1]
+        start = content[0]['startIndex']
+        end = start + len(text)
+        if cls.matches(content):
+            target = cls.PARSER.sub(rf"\g<payload>", text)
+            value = cls.text_to_val(target)
+        else:
+            target = text.strip()
+            value = None
+        return {
+            'text': text,
+            'start': start,
+            'end': end,
+            'target': target,
+            'value': value,
+        }
+    
+    @classmethod
+    def text_to_val(cls, text):
+        return text
+    
+    @classmethod
+    def val_to_text(cls, text):
+        return text
+    
+    @classmethod
+    def b7r_to_val(cls, text):
+        return text
 
-class DURATION_KEY:
-    REGEX = f'^(({P.SPACE}*)({LABEL.DURATION})){P.SPACE}*$'
-    START = r'\2'
-    END = r'\1'
-    MATCH = r'\3'
-    parse = re.compile(REGEX, flags=re.S)
+# == PARSING AREAS DATA ========================================================
 
-class DURATION_VAL:
-    REGEX = f'^(({P.SPACE}*)({LABEL.DURATION_VAL})){P.SPACE}*$'
-    START = r'\2'
-    END = r'\1'
-    MATCH = r'\3'
-    parse = re.compile(REGEX, flags=re.S)
+class AreasKey:
+    REGEX = rf'Areas'
+    PARSER = re.compile(
+        rf"^(?P<prolog>{SPACE}*)"
+        rf"(?P<payload>{REGEX})"
+        rf"(?P<epilog>{SPACE}*)$",
+        flags=re.S)
 
-class GDURATION_KEY:
-    REGEX = f'^(({P.SPACE}*)({LABEL.GDURATION})){P.SPACE}*\n$'
-    START = r'\2'
-    END = r'\1'
-    MATCH = r'\3'
-    parse = re.compile(REGEX, flags=re.S)
+    @classmethod
+    def matches(cls, content):
+        return cls.PARSER.search(rse(content)[:-1])
+    
+    @classmethod
+    def extract(cls, content):
+        if not isinstance(content, list):
+            raise click.ClickException("Internal error")
+        text = rse(content)[:-1]
+        start = content[0]['startIndex']
+        end = start + len(text)
+        target = cls.PARSER.sub(rf"\g<payload>", text)
+        value = cls.text_to_val(target)
+        return {
+            'text': text,
+            'start': start,
+            'end': end,
+            'target': target,
+            'value': value,
+        }
+    
+    @classmethod
+    def text_to_val(cls, text):
+        return text.strip()
+    
+    @classmethod
+    def val_to_text(cls, text):
+        return text
 
-class GDURATION_VAL:
-    REGEX = f'^(({P.SPACE}*)({LABEL.GDURATION_VAL})){P.SPACE}*\n$'
-    START = r'\2'
-    END = r'\1'
-    MATCH = r'\3'
-    parse = re.compile(REGEX, flags=re.S)
+class AreasVal:
+    NICKNAME = 'areas'
+    TOKEN = rf'Security|Datacenter|Partner Integrations|Base Networking|'\
+            rf'Cloud Networking|Operations|Contracts & Compliance|Testing|'\
+            rf'Program Mgt.|GCP Horizontal Services|TPC IaaC'
+    REGEX = rf'({TOKEN})(({SPACE})*,({SPACE})*({TOKEN}))*'
+    PARSER = re.compile(
+        rf"^(?P<prolog>{SPACE}*)"
+        rf"(?P<payload>{REGEX})"
+        rf"(?P<epilog>{SPACE}*)$",
+        flags=re.S)
+
+    @classmethod
+    def matches(cls, content):
+        return cls.PARSER.search(rse(content)[:-1])
+    
+    @classmethod
+    def extract(cls, content):
+        if not isinstance(content, list):
+            raise click.ClickException("Internal error")
+        text = rse(content)[:-1]
+        start = content[0]['startIndex']
+        end = start + len(text)
+        if cls.matches(content):
+            target = cls.PARSER.sub(rf"\g<payload>", text)
+            value = cls.text_to_val(target)
+        else:
+            target = text.strip()
+            value = None
+        return {
+            'text': text,
+            'start': start,
+            'end': end,
+            'target': target,
+            'value': value,
+        }
+    
+    @classmethod
+    def text_to_val(cls, text):
+        # Split the string into tokens
+        tokens = [token.strip() for token in text.split(',')]
+        # Remove empty tokens
+        tokens = [token for token in tokens if token]
+        # Sort the tokens lexicographically
+        tokens.sort()
+        # Deduplicate the tokens
+        unique_tokens = list(set(tokens))
+        # Join the tokens with a comma and a space
+        result = ', '.join(unique_tokens)
+        return result
+    
+    @classmethod
+    def val_to_text(cls, text):
+        return text
+    
+    @classmethod
+    def b7r_to_val(cls, text):
+        return text
+
+# == PARSING LEADER DATA =======================================================
+
+class LeaderKey:
+    REGEX = rf'Leader'
+    PARSER = re.compile(
+        rf"^(?P<prolog>{SPACE}*)"
+        rf"(?P<payload>{REGEX})"
+        rf"(?P<epilog>{SPACE}*)$",
+        flags=re.S)
+
+    @classmethod
+    def matches(cls, content):
+        return cls.PARSER.search(rse(content)[:-1])
+    
+    @classmethod
+    def extract(cls, content):
+        if not isinstance(content, list):
+            raise click.ClickException("Internal error")
+        text = rse(content)[:-1]
+        start = content[0]['startIndex']
+        end = start + len(text)
+        target = cls.PARSER.sub(rf"\g<payload>", text)
+        value = cls.text_to_val(target)
+        return {
+            'text': text,
+            'start': start,
+            'end': end,
+            'target': target,
+            'value': value,
+        }
+    
+    @classmethod
+    def text_to_val(cls, text):
+        return text.strip()
+    
+    @classmethod
+    def val_to_text(cls, text):
+        return text
+
+class LeaderVal:
+    NICKNAME = 'leader'
+    REGEX = rf'S3NS|Google|Joint'
+    PARSER = re.compile(
+        rf"^(?P<prolog>{SPACE}*)"
+        rf"(?P<payload>{REGEX})"
+        rf"(?P<epilog>{SPACE}*)$",
+        flags=re.S)
+
+    @classmethod
+    def matches(cls, content):
+        return cls.PARSER.search(rse(content)[:-1])
+    
+    @classmethod
+    def extract(cls, content):
+        if not isinstance(content, list):
+            raise click.ClickException("Internal error")
+        text = rse(content)[:-1]
+        start = content[0]['startIndex']
+        end = start + len(text)
+        if cls.matches(content):
+            target = cls.PARSER.sub(rf"\g<payload>", text)
+            value = cls.text_to_val(target)
+        else:
+            target = text.strip()
+            value = None
+        return {
+            'text': text,
+            'start': start,
+            'end': end,
+            'target': target,
+            'value': value,
+        }
+    
+    @classmethod
+    def text_to_val(cls, text):
+        return text
+    
+    @classmethod
+    def val_to_text(cls, text):
+        return text
+    
+    @classmethod
+    def b7r_to_val(cls, text):
+        return text
+
+
+# == PARSING S3NS OWNER DATA ===================================================
+    
+class S3nsOwnerKey:
+    REGEX = rf'S3ns owners'
+    PARSER = re.compile(
+        rf"^(?P<prolog>{SPACE}*)"
+        rf"(?P<payload>{REGEX})"
+        rf"(?P<epilog>{SPACE}*)$",
+        flags=re.S)
+
+    @classmethod
+    def matches(cls, content):
+        return cls.PARSER.search(rse(content)[:-1])
+    
+    @classmethod
+    def extract(cls, content):
+        if not isinstance(content, list):
+            raise click.ClickException("Internal error")
+        text = rse(content)[:-1]
+        start = content[0]['startIndex']
+        end = start + len(text)
+        target = cls.PARSER.sub(rf"\g<payload>", text)
+        value = cls.text_to_val(target)
+        return {
+            'text': text,
+            'start': start,
+            'end': end,
+            'target': target,
+            'value': value,
+        }
+    
+    @classmethod
+    def text_to_val(cls, text):
+        return text.strip()
+    
+    @classmethod
+    def val_to_text(cls, text):
+        return text
+
+class S3nsOwnerVal:
+    NICKNAME = 's3ns_owner'
+
+    @classmethod
+    def matches(cls, content):
+        try:
+            S3nsOwnerVal.extract(content)
+            return True
+        except ValueError:
+            return False
+
+    @classmethod
+    def extract(cls, content):
+        try:
+            owner = content[0]['paragraph']['elements'][0]\
+                    ['person']['personProperties']
+        except:
+            raise ValueError("<PERSON>")
+        return {
+            'text': '',
+            'start': content[0]['startIndex'],
+            'end': content[0]['startIndex'],
+            'target': '',
+            'value': owner['name'],
+            'name': owner['name'],
+            'email': owner['email'],
+        }
+    
+    @classmethod
+    def b7r_to_val(cls, text):
+        return text
+
+# == PARSING GOOGLE OWNER DATA =================================================
+
+class GoogleOwnerKey:
+    REGEX = rf'Google owners'
+    PARSER = re.compile(
+        rf"^(?P<prolog>{SPACE}*)"
+        rf"(?P<payload>{REGEX})"
+        rf"(?P<epilog>{SPACE}*)$",
+        flags=re.S)
+
+    @classmethod
+    def matches(cls, content):
+        return cls.PARSER.search(rse(content)[:-1])
+    
+    @classmethod
+    def extract(cls, content):
+        if not isinstance(content, list):
+            raise click.ClickException("Internal error")
+        text = rse(content)[:-1]
+        start = content[0]['startIndex']
+        end = start + len(text)
+        target = cls.PARSER.sub(rf"\g<payload>", text)
+        value = cls.text_to_val(target)
+        return {
+            'text': text,
+            'start': start,
+            'end': end,
+            'target': target,
+            'value': value,
+        }
+    
+    @classmethod
+    def text_to_val(cls, text):
+        return text.strip()
+    
+    @classmethod
+    def val_to_text(cls, text):
+        return text
+
+class GoogleOwnerVal:
+    NICKNAME = 'google_owner'
+
+    @classmethod
+    def matches(cls, content):
+        try:
+            GoogleOwnerVal.extract(content)
+            return True
+        except ValueError:
+            return False
+
+    @classmethod
+    def extract(cls, content):
+        try:
+            owner = content[0]['paragraph']['elements'][0]\
+                    ['person']['personProperties']
+        except:
+            raise ValueError("<PERSON>")
+        return {
+            'text': '',
+            'start': content[0]['startIndex'],
+            'end': content[0]['startIndex'],
+            'target': '',
+            'value': owner['name'],
+            'name': owner['name'],
+            'email': owner['email'],
+        }
+    
+    @classmethod
+    def b7r_to_val(cls, text):
+        return text
+
+# == PARSING MATURITY DATA =====================================================
+
+class MaturityKey:
+    REGEX = rf'SOW maturity'
+    PARSER = re.compile(
+        rf"^(?P<prolog>{SPACE}*)"
+        rf"(?P<payload>{REGEX})"
+        rf"(?P<epilog>{SPACE}*)$",
+        flags=re.S)
+
+    @classmethod
+    def matches(cls, content):
+        return cls.PARSER.search(rse(content)[:-1])
+    
+    @classmethod
+    def extract(cls, content):
+        if not isinstance(content, list):
+            raise click.ClickException("Internal error")
+        text = rse(content)[:-1]
+        start = content[0]['startIndex']
+        end = start + len(text)
+        target = cls.PARSER.sub(rf"\g<payload>", text)
+        value = cls.text_to_val(target)
+        return {
+            'text': text,
+            'start': start,
+            'end': end,
+            'target': target,
+            'value': value,
+        }
+    
+    @classmethod
+    def text_to_val(cls, text):
+        return text.strip()
+    
+    @classmethod
+    def val_to_text(cls, text):
+        return text
+
+class MaturityVal:
+    NICKNAME = 'maturity'
+    REGEX = rf'☆☆☆|★☆☆|★★☆|★★★'
+    PARSER = re.compile(
+        rf"^(?P<prolog>{SPACE}*)"
+        rf"(?P<payload>{REGEX})"
+        rf"(?P<epilog>{SPACE}*)$",
+        flags=re.S)
+
+    @classmethod
+    def matches(cls, content):
+        return cls.PARSER.search(rse(content)[:-1])
+    
+    @classmethod
+    def extract(cls, content):
+        if not isinstance(content, list):
+            raise click.ClickException("Internal error")
+        text = rse(content)[:-1]
+        start = content[0]['startIndex']
+        end = start + len(text)
+        if cls.matches(content):
+            target = cls.PARSER.sub(rf"\g<payload>", text)
+            value = cls.text_to_val(target)
+        else:
+            target = text.strip()
+            value = None
+        return {
+            'text': text,
+            'start': start,
+            'end': end,
+            'target': target,
+            'value': value,
+        }
+    
+    @classmethod
+    def text_to_val(cls, text):
+        match text:
+            case '☆☆☆':
+                return 0
+            case '★☆☆':
+                return 1
+            case '★★☆':
+                return 2
+            case '★★★':
+                return 3
+            case _:
+                return None
+    
+    @classmethod
+    def val_to_text(cls, val):
+        match val:
+            case None:
+                return None
+            case 0:
+                return '☆☆☆'
+            case 1:
+                return '★☆☆'
+            case 2:
+                return '★★☆'
+            case 3:
+                return '★★★'
+            case _:
+                raise Exception("Internal error")
+    
+    @classmethod
+    def b7r_to_val(cls, b7r):
+        if not isinstance(b7r, int):
+            return None
+        b7r = int(b7r)
+        return b7r if b7r >= 0 and b7r <= 3 else None
+
+# == PARSING EFFORT DATA =======================================================
+
+class EffortKey:
+    REGEX = rf'Effort - eng days'
+    PARSER = re.compile(
+        rf"^(?P<prolog>{SPACE}*)"
+        rf"(?P<payload>{REGEX})"
+        rf"(?P<epilog>{SPACE}*)$",
+        flags=re.S)
+
+    @classmethod
+    def matches(cls, content):
+        return cls.PARSER.search(rse(content)[:-1])
+    
+    @classmethod
+    def extract(cls, content):
+        if not isinstance(content, list):
+            raise click.ClickException("Internal error")
+        text = rse(content)[:-1]
+        start = content[0]['startIndex']
+        end = start + len(text)
+        target = cls.PARSER.sub(rf"\g<payload>", text)
+        value = cls.text_to_val(target)
+        return {
+            'text': text,
+            'start': start,
+            'end': end,
+            'target': target,
+            'value': value,
+        }
+    
+    @classmethod
+    def text_to_val(cls, text):
+        return text.strip()
+    
+    @classmethod
+    def val_to_text(cls, text):
+        return text
+    
+class EffortVal:
+    NICKNAME = 'effort'
+    REGEX = rf'(\d+[.]\d*|[?]+|TBD)'
+    PARSER = re.compile(
+        rf"^(?P<prolog>{SPACE}*)"
+        rf"(?P<payload>{REGEX})"
+        rf"(?P<epilog>{SPACE}*)$",
+        flags=re.S)
+
+    @classmethod
+    def matches(cls, content):
+        return cls.PARSER.search(rse(content)[:-1])
+    
+    @classmethod
+    def extract(cls, content):
+        if not isinstance(content, list):
+            raise click.ClickException("Internal error")
+        text = rse(content)[:-1]
+        start = content[0]['startIndex']
+        end = start + len(text)
+        if cls.matches(content):
+            target = cls.PARSER.sub(rf"\g<payload>", text)
+            try:
+                value = float(target)
+            except ValueError:
+                target = 'TBD'
+                value = target
+        else:
+            target = text.strip()
+            value = None
+        return {
+            'text': text,
+            'start': start,
+            'end': end,
+            'target': target,
+            'value': value,
+        }
+    
+    @classmethod
+    def text_to_val(cls, text):
+        try:
+            return float(target)
+        except ValueError:
+            return'TBD'
+    
+    @classmethod
+    def val_to_text(cls, text):
+        return str(text)
+    
+    @classmethod
+    def b7r_to_val(cls, text):
+        return None
+
+# == PARSING DURATION DATA =======================================================
+
+class DurationKey:
+    REGEX = rf'Duration - cal days'
+    PARSER = re.compile(
+        rf"^(?P<prolog>{SPACE}*)"
+        rf"(?P<payload>{REGEX})"
+        rf"(?P<epilog>{SPACE}*)$",
+        flags=re.S)
+
+    @classmethod
+    def matches(cls, content):
+        return cls.PARSER.search(rse(content)[:-1])
+    
+    @classmethod
+    def extract(cls, content):
+        if not isinstance(content, list):
+            raise click.ClickException("Internal error")
+        text = rse(content)[:-1]
+        start = content[0]['startIndex']
+        end = start + len(text)
+        target = cls.PARSER.sub(rf"\g<payload>", text)
+        value = cls.text_to_val(target)
+        return {
+            'text': text,
+            'start': start,
+            'end': end,
+            'target': target,
+            'value': value,
+        }
+    
+    @classmethod
+    def text_to_val(cls, text):
+        return text.strip()
+    
+    @classmethod
+    def val_to_text(cls, text):
+        return text
+    
+class DurationVal:
+    NICKNAME = 'duration'
+    REGEX = rf'(\d+[.]\d*|[?]+|TBD)'
+    PARSER = re.compile(
+        rf"^(?P<prolog>{SPACE}*)"
+        rf"(?P<payload>{REGEX})"
+        rf"(?P<epilog>{SPACE}*)$",
+        flags=re.S)
+
+    @classmethod
+    def matches(cls, content):
+        return cls.PARSER.search(rse(content)[:-1])
+    
+    @classmethod
+    def extract(cls, content):
+        if not isinstance(content, list):
+            raise click.ClickException("Internal error")
+        text = rse(content)[:-1]
+        start = content[0]['startIndex']
+        end = start + len(text)
+        if cls.matches(content):
+            target = cls.PARSER.sub(rf"\g<payload>", text)
+            try:
+                value = float(target)
+            except ValueError:
+                target = 'TBD'
+                value = target
+        else:
+            target = text.strip()
+            value = None
+        return {
+            'text': text,
+            'start': start,
+            'end': end,
+            'target': target,
+            'value': value,
+        }
+    
+    @classmethod
+    def text_to_val(cls, text):
+        try:
+            return float(target)
+        except ValueError:
+            return'TBD'
+    
+    @classmethod
+    def val_to_text(cls, text):
+        return str(text)
+    
+    @classmethod
+    def b7r_to_val(cls, text):
+        return None
+
+# ------------------------------------------------------------------------------
+
+#class LEADER_KEY:
+#    REGEX = f'^(({Token.SPACENL}*)({LABEL.LEADER})){Token.SPACENL}*$'
+#    START = r'\2'
+#    END = r'\1'
+#    MATCH = r'\3'
+#    parse = re.compile(REGEX, flags=re.S)
+#
+#class S3NSOWNER_KEY:
+#    REGEX = f'^(({Token.SPACENL}*)({LABEL.S3NSOWNER})){Token.SPACENL}*$'
+#    START = r'\2'
+#    END = r'\1'
+#    MATCH = r'\3'
+#    parse = re.compile(REGEX, flags=re.S)
+#
+#class GOOGLEOWNER_KEY:
+#    REGEX = f'^(({Token.SPACENL}*)({LABEL.GOOGLEOWNER})){Token.SPACENL}*$'
+#    START = r'\2'
+#    END = r'\1'
+#    MATCH = r'\3'
+#    parse = re.compile(REGEX, flags=re.S)
+#
+#class MATURITY_KEY:
+#    REGEX = f'^(({Token.SPACENL}*)({LABEL.MATURITY})){Token.SPACENL}*$'
+#    START = r'\2'
+#    END = r'\1'
+#    MATCH = r'\3'
+#    parse = re.compile(REGEX, flags=re.S)
+#
+#class MATURITY_VAL:
+#    REGEX = f'^(({Token.SPACENL}*)({LABEL.MATURITY_VAL})){Token.SPACENL}*$'
+#    START = r'\2'
+#    END = r'\1'
+#    MATCH = r'\3'
+#    parse = re.compile(REGEX, flags=re.S)
+
+#class EFFORT_KEY:
+#    REGEX = f'^(({Tok.SPACENL}*)({LABEL.EFFORT})){Tok.SPACENL}*$'
+#    START = r'\2'
+#    END = r'\1'
+#    MATCH = r'\3'
+#    parse = re.compile(REGEX, flags=re.S)
+#
+#class EFFORT_VAL:
+#    REGEX = f'^(({Tok.SPACENL}*)({LABEL.EFFORT_VAL})){Tok.SPACENL}*$'
+#    START = r'\2'
+#    END = r'\1'
+#    MATCH = r'\3'
+#    parse = re.compile(REGEX, flags=re.S)
+#
+#class DURATION_KEY:
+#    REGEX = f'^(({Tok.SPACENL}*)({LABEL.DURATION})){Tok.SPACENL}*$'
+#    START = r'\2'
+#    END = r'\1'
+#    MATCH = r'\3'
+#    parse = re.compile(REGEX, flags=re.S)
+#
+#class DURATION_VAL:
+#    REGEX = f'^(({Tok.SPACENL}*)({LABEL.DURATION_VAL})){Tok.SPACENL}*$'
+#    START = r'\2'
+#    END = r'\1'
+#    MATCH = r'\3'
+#    parse = re.compile(REGEX, flags=re.S)
+#
+#class GDURATION_KEY:
+#    REGEX = f'^(({Tok.SPACENL}*)({LABEL.GDURATION})){Tok.SPACENL}*\n$'
+#    START = r'\2'
+#    END = r'\1'
+#    MATCH = r'\3'
+#    parse = re.compile(REGEX, flags=re.S)
+#
+#class GDURATION_VAL:
+#    REGEX = f'^(({Tok.SPACENL}*)({LABEL.GDURATION_VAL})){Tok.SPACENL}*\n$'
+#    START = r'\2'
+#    END = r'\1'
+#    MATCH = r'\3'
+#    parse = re.compile(REGEX, flags=re.S)
 
 class RAW_LABEL:
     STAGE = 'Stage'

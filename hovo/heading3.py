@@ -1,23 +1,22 @@
 __package__ = 'hovo'
 
-from hovo.structural import get_text
-from hovo.const import HEADING3
-from hovo.const import MODE
-from hovo.glob import S
+#from hovo.structural import get_text
+from hovo.const import KnownH3
+from hovo import state
+from hovo.structural import rse
 
-def parse_heading3(element):             # This may be a dependency specification
-    global S
+def parse_h3(element):             # This may be a dependency specification
 
-    text = get_text([element])
-    if S.Mode == MODE.ENGAGED:
-        if text == HEADING3.DEPENDS_ON:
-            S.Mode = MODE.DEPENDS_ON
-        elif text == HEADING3.UNLOCKS:
-            S.Mode = MODE.UNLOCKS
-    elif S.Mode == MODE.DEPENDS_ON:
-        if text == HEADING3.UNLOCKS:
-            S.Mode = MODE.UNLOCKS
+    text = rse([element])
+    if state.mode == state.MODE.ENGAGED:
+        if text == KnownH3.DEPENDS_ON:
+            state.mode = state.MODE.DEPENDS_ON
+        elif text == KnownH3.UNLOCKS:
+            state.mode = state.MODE.UNLOCKS
+    elif state.mode == state.MODE.DEPENDS_ON:
+        if text == KnownH3.UNLOCKS:
+            state.mode = state.MODE.UNLOCKS
         else:
-            S.Mode = MODE.DISENGAGED
+            state.mode = state.MODE.DISENGAGED
     else:
-        S.Mode = MODE.DISENGAGED
+        state.mode = state.MODE.DISENGAGED

@@ -2,13 +2,14 @@ __package__ = 'hovo'
 
 import click
 
-from hovo.const import ACOL
-from hovo.options import O
-from hovo.glob import D
+from hovo import glob
+from hovo import option
+from hovo.colors import Ansi
+
 
 def warning(message):
-    ACOL.print(message, color=ACOL.BRIGHT_YELLOW)
-    if O.stop_on_warning:
+    Ansi.warning(message)
+    if option.stop_on_warning:
         raise click.ClickException("Stopping on warning")
     else:
-        D.Warnings += 1
+        glob.warnings += 1

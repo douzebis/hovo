@@ -8,35 +8,29 @@ import sys
 import zipfile
 
 import click
-
 from bs4 import BeautifulSoup
-
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
 
+import hovo.googleapi
+from hovo import glob, googleapi, option, state
 from hovo.cleanup import cleanup
+from hovo.colors import Ansi
+from hovo.const import STAGE, STAGES
 from hovo.depend import parse_depend
-from hovo.const import ACOL
-from hovo.const import MODE
-from hovo.const import STAGE
-from hovo.const import STAGES
-from hovo.const import STEP
-from hovo.glob import D
-from hovo.glob import S
-from hovo.heading2 import parse_heading2
-from hovo.heading3 import parse_heading3
+from hovo.fixer import Fixer
+from hovo.heading2 import parse_h2
+from hovo.heading3 import parse_h3
 from hovo.table import parse_table
-from hovo.options import O
-from hovo.doc import DOC
 
-def parse(elements):
-    """Recurses through a list of Structural Elements to retrieve Hovo steps specifications and
-        dependencies between steps.
+
+def parse_steps(elements):
+    """Recurses through a list of Structural Elements to retrieve Hovo steps
+        specifications and dependencies between steps.
 
         Args:
             elements: a list of Structural Elements.
     """
-    global S
 
     for element in elements:
         if 'paragraph' in element:
@@ -46,21 +40,21 @@ def parse(elements):
                 style = ''
 
             if style == 'HEADING_1':
-                S.Mode = MODE.DISENGAGED
+                state.mode = state.MODE.DISENGAGED
 
-            if style == 'HEADING_2':
-                parse_heading2(element)
+            elif style == 'HEADING_2':
+                parse_h2(element)
 
             elif style == 'HEADING_3':
-                parse_heading3(element)
+                parse_h3(element)
 
-            elif (S.Mode == MODE.DEPENDS_ON
-                or S.Mode == MODE.UNLOCKS):
+            elif (state.mode == state.MODE.DEPENDS_ON
+                or state.mode == state.MODE.UNLOCKS):
                 parse_depend(element)
 
             elems = element.get('paragraph').get('elements')
             for elem in elems:
-                parse(elem)
+                parse_steps(elem)
 
         elif 'table' in element:
             parse_table(element)
@@ -68,25 +62,31 @@ def parse(elements):
         elif 'tableOfContents' in element:
             # The text in the TOC is also in a Structural Element.
             toc = element.get('tableOfContents')
-            parse(toc.get('content'))
+            parse_steps(toc.get('content'))
 
-def check():
-    ACOL.print("Parsing the document...", color=ACOL.GRAY, file=sys.stderr)
-    parse(D.contents)
-    if S.Step != {}: D.Steps.append(S.Step)
-    
-    print(json.dumps(D.Steps, indent=2))
-    print()
-    print(json.dumps(D.Bugs, indent=2))
+def check_hovo():
+    Ansi.print("Parsing the document...", color=Ansi.GRAY, file=sys.stderr)
+    parse_steps(glob.contents)
+    # Commit the last (possibly pending) step
+    glob.commit_step()
 
-    D.Docs.documents().batchUpdate(
-        documentId=O.doc_id,
-        body={'requests': DOC.get_inplace_requests() + DOC.get_moving_requests()}
-    ).execute()
+    if option.traces:
+        Ansi.flash("*** DUMPING hovo.Steps...")
+        Ansi.flash(json.dumps(glob.steps, indent=2))
+        Ansi.flash("***")
+        Ansi.flash("*** *** DUMPING hovo.Bugs...")
+        Ansi.flash(json.dumps(glob.Bugs, indent=2))
+
+    if not option.dry_run:
+        googleapi.docs.documents().batchUpdate(
+            documentId=option.doc_id,
+            body={'requests': Fixer.get_inplace_requests() \
+                + Fixer.get_moving_requests()}
+        ).execute()
 
     return
 
-    ACOL.print("\nHOVO Maturity...", color=ACOL.GRAY, file=sys.stderr)
+    Ansi.print("\nHOVO Maturity...", color=Ansi.GRAY, file=sys.stderr)
     count = {
         getattr(STAGE, key): 0
         for key in dir(STAGE)
@@ -104,15 +104,15 @@ def check():
         sigma[stage] += step['maturity']
     Count = sum(count.values())
     Sigma = sum(sigma.values())
-    ACOL.print(
+    Ansi.print(
         f"Global maturity: {round(100*Sigma/(3*Count)) if Count > 0 else 'NaN'}%",
-        color=ACOL.GREEN)
+        color=Ansi.GREEN)
     for stage in STAGES:
-        ACOL.print(
+        Ansi.print(
             f"- {stage}: {round(100*sigma[stage]/(3*count[stage])) if count[stage] > 0 else 'NaN'}%",
-            color=ACOL.GREEN)
+            color=Ansi.GREEN)
 
-    ACOL.print("\nCHECKING THE CONSISTENCY OF DEPENDENCIES", color=ACOL.GRAY, file=sys.stderr)
+    Ansi.print("\nCHECKING THE CONSISTENCY OF DEPENDENCIES", color=Ansi.GRAY, file=sys.stderr)
     for step in G.Steps:
         step_id = step['bugid']
         missing_depends = []
@@ -128,37 +128,37 @@ def check():
         if len(missing_depends) == 0 and len(missing_unlocks) == 0:
             #ACOL.print(f"{step_id}: OK", color=ACOL.GRAY)
             continue
-        ACOL.print(f"{step_id}: {step['title']}...", color=ACOL.BRIGHT_YELLOW)
+        Ansi.print(f"{step_id}: {step['title']}...", color=Ansi.BRIGHT_YELLOW)
         if len(missing_depends) > 0:
-            ACOL.print(f"- Missing 'depends on':", color=ACOL.BRIGHT_YELLOW)
+            Ansi.print(f"- Missing 'depends on':", color=Ansi.BRIGHT_YELLOW)
             for sibling in missing_depends:
-                ACOL.print(f"{sibling['bugid']} {sibling['title']}", color=ACOL.YELLOW)
+                Ansi.print(f"{sibling['bugid']} {sibling['title']}", color=Ansi.YELLOW)
         if len(missing_unlocks) > 0:
-            ACOL.print(f"- Missing 'unlocks':", color=ACOL.BRIGHT_YELLOW)
+            Ansi.print(f"- Missing 'unlocks':", color=Ansi.BRIGHT_YELLOW)
             for sibling in missing_unlocks:
-                ACOL.print(f"{sibling['bugid']} {sibling['title']}", color=ACOL.YELLOW)
+                Ansi.print(f"{sibling['bugid']} {sibling['title']}", color=Ansi.YELLOW)
 
-    ACOL.print("\nOUTPUTING DEPENDENCY GRAPH", color=ACOL.GRAY, file=sys.stderr)
-    ACOL.print(f"graph TD;", color=ACOL.GREEN)
+    Ansi.print("\nOUTPUTING DEPENDENCY GRAPH", color=Ansi.GRAY, file=sys.stderr)
+    Ansi.print(f"graph TD;", color=Ansi.GREEN)
     G.Seen = set()
     for step in G.Steps:
         step_id = step['bugid']
         for sibling_id in step['unlocks']:
             sibling_label = node_label(sibling_id)
             step_label = node_label(step_id) # /!\ Don't move this line up. We want a label only the 1st time
-            ACOL.print(f"  {step_id}{step_label} --> {sibling_id}{sibling_label};", color=ACOL.GREEN)
+            Ansi.print(f"  {step_id}{step_label} --> {sibling_id}{sibling_label};", color=Ansi.GREEN)
 
-    ACOL.print("\nOUTPUTING GANTT CHART", color=ACOL.GRAY, file=sys.stderr)
-    ACOL.print(f"gantt", color=ACOL.GREEN)
-    ACOL.print(f"  title HOVO Gantt", color=ACOL.GREEN)
-    ACOL.print(f"  dateFormat  YYYY-MM-DD", color=ACOL.GREEN)
-    ACOL.print(f"  excludes  Saturday Sunday", color=ACOL.GREEN)
-    ACOL.print(f"  start :start, 2024-01-01, 0d", color=ACOL.GREEN)
+    Ansi.print("\nOUTPUTING GANTT CHART", color=Ansi.GRAY, file=sys.stderr)
+    Ansi.print(f"gantt", color=Ansi.GREEN)
+    Ansi.print(f"  title HOVO Gantt", color=Ansi.GREEN)
+    Ansi.print(f"  dateFormat  YYYY-MM-DD", color=Ansi.GREEN)
+    Ansi.print(f"  excludes  Saturday Sunday", color=Ansi.GREEN)
+    Ansi.print(f"  start :start, 2024-01-01, 0d", color=Ansi.GREEN)
     prev_stage = None
     for step in G.Steps:
         stage = step['stage']
         if stage != prev_stage:
-            ACOL.print(f"  section {stage}", color=ACOL.GREEN)
+            Ansi.print(f"  section {stage}", color=Ansi.GREEN)
             prev_stage = stage
         step_id = step['bugid']
         #for sibling_id in G.Steps:
@@ -170,7 +170,7 @@ def check():
         for sibling_id in step['depends_on']:
             task += f" {sibling_id}"
         task += ", 1d"
-        ACOL.print(f"  {task}", color=ACOL.GREEN)
+        Ansi.print(f"  {task}", color=Ansi.GREEN)
     
 ############
 # ASSIGNEES
@@ -238,7 +238,7 @@ def check():
         step = next(step for step in G.Steps if step['bugid'] == current_bugid)
         step['cmnts'] = current_cmnts
 
-    ACOL.print("\nBUGIDS PER ASSIGNEE", color=ACOL.GRAY, file=sys.stderr)
+    Ansi.print("\nBUGIDS PER ASSIGNEE", color=Ansi.GRAY, file=sys.stderr)
     assignee_bugids = {}
     # Iterate through bugids
     for step in G.Steps:
@@ -260,9 +260,9 @@ def check():
     # Display the result
                 
     for assignee, assigned_bugids in sorted(assignee_bugids.items()):
-        ACOL.print(f"{assignee}: {sorted(assigned_bugids)}", color=ACOL.YELLOW)
+        Ansi.print(f"{assignee}: {sorted(assigned_bugids)}", color=Ansi.YELLOW)
     
-    ACOL.print("\nASSIGNEES PER BUGID", color=ACOL.GRAY, file=sys.stderr)
+    Ansi.print("\nASSIGNEES PER BUGID", color=Ansi.GRAY, file=sys.stderr)
     bugid_comments = {}
     # Iterate through bugids
     for step in G.Steps:
@@ -278,9 +278,9 @@ def check():
             bugid_comments[bugid] = comments_with_assignee
     # Display the result
     for bugid, comments_with_assignee in bugid_comments.items():
-        ACOL.print(f"{bugid}: {comments_with_assignee}", color=ACOL.YELLOW)
+        Ansi.print(f"{bugid}: {comments_with_assignee}", color=Ansi.YELLOW)
 
-    ACOL.print("\nCLEANING UP BUGIDS FORMATTING IN THE DOCUMENT", color=ACOL.GRAY, file=sys.stderr)
+    Ansi.print("\nCLEANING UP BUGIDS FORMATTING IN THE DOCUMENT", color=Ansi.GRAY, file=sys.stderr)
     cleanup(docs, doc_id)
 
 # hovo() is the entry point for shell completion

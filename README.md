@@ -16,6 +16,7 @@ pip install --upgrade google-auth-httplib2
 pip install --upgrade google-auth-oauthlib
 pip install --upgrade js2py
 pip install --upgrade oauth2client
+pip install --upgrade selenium
 pip install --editable .
 ```
 

@@ -4,18 +4,18 @@ import json
 
 import click
 
-from hovo.const import GDURATION_KEY
-from hovo.const import GDURATION_VAL
-from hovo.const import RAW_LABEL
-from hovo.const import TRIMMER
-from hovo.glob import S
-from hovo.glob import D
-from hovo.options import O
+from hovo import option
 from hovo.structural import rse
 from hovo.warning import warning
-from hovo.doc import DOC
+from hovo.fixer import Fixer
 
-def retrieve_gduration(rows):
+def float_to_string(value):
+    if int(value) == value:
+        return str(int(value))
+    else:
+        return str(value)
+    
+def retrieve_google_duration(rows):
     global S
 
     gduration_key = {}
@@ -46,22 +46,22 @@ def retrieve_gduration(rows):
     gduration_val['start'] = content[0]['startIndex']
     gduration_val['end'] = content[0]['endIndex'] - 1
     gduration_val['text'] = rse(content)
-    if O.import_buganizer:
-        gduration_val['target'] = str(float(S.Buganizer['gduration']))
+    if option.import_buganizer:
+        gduration_val['target'] = float_to_string(float(S.Buganizer['gduration']))
     else:
         try:
-            gduration_val['target'] = str(float(gduration_val['text']))
+            gduration_val['target'] = float_to_string(float(gduration_val['text']))
         except:
-            gduration_val['target'] = str(0.)
+            gduration_val['target'] = float_to_string(0.)
     
     if gduration_val['text'] != gduration_val['target']:
-        DOC.replace(
+        Fixer.replace(
             gduration_val['target'],
             gduration_val['start'],
             gduration_val['end']
         )
 
-    if O.check_buganizer:
+    if option.check_buganizer:
         if gduration_val['target'] != S.Buganizer['gduration']:
             warning(
                 f"Google duration in Doc and Buganizer do not match: compare\n- {gduration_val['target']}\n- {S.Buganizer['gduration']}")

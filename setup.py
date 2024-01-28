@@ -17,7 +17,7 @@ setup(
     ],
     entry_points={
         'console_scripts': [
-            'hovo=hovo.cli:cli',
+            'hovo=hovo.main:main_cli',
         ],
     },
 )

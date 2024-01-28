@@ -2,21 +2,21 @@ __package__ = 'hovo'
 
 import click
 
-from hovo.const import P
-from hovo.glob import D
+from hovo.const import Tok
+from hovo import glob
 
 def bug_register(bugid, bugidStart, bugidEnd,
                  title, titleStart, titleEnd):
     global G
     
-    bug = next((bug for bug in D.Bugs if bug['bugid'] == bugid), None)
+    bug = next((bug for bug in glob.Bugs if bug['bugid'] == bugid), None)
     if bug != None:
         if (title != bug['title']
-            and bugid != P.MISSINGBUG):
+            and bugid != Tok.MISSINGBUG):
             raise click.ClickException(
                 f'bug titles for Bug ID {bugid} do not match:\n' +
                 f"{title} versus {bug['title']}")
-    D.Bugs.append(
+    glob.Bugs.append(
         {
             'bugid': bugid,
             'title': title,

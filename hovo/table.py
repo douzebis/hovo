@@ -1,41 +1,38 @@
 __package__ = 'hovo'
 
 import json
-import re
+import sys
 
 import click
 
-from hovo.area import retrieve_area
-from hovo.const import ACOL
-from hovo.const import COLOR
-#from hovo.const import LABEL_ROW
-from hovo.const import MODE
-from hovo.const import STEP
-from hovo.const import BUGID
-from hovo.const import TITLE
+from hovo import glob, option
+from hovo.areas import retrieve_areas
+from hovo.colors import Ansi, Rgb
+from hovo.fixer import Fixer
 from hovo.duration import retrieve_duration
-from hovo.gduration import retrieve_gduration
 from hovo.effort import retrieve_effort
-from hovo.glob import S
-from hovo.glob import D
-from hovo.options import O
-from hovo.googleowner import retrieve_googleowner
+from hovo.google_duration import retrieve_google_duration
+from hovo.google_owner import retrieve_google_owner
 from hovo.leader import retrieve_leader
 from hovo.maturity import retrieve_maturity
-from hovo.s3nsowner import retrieve_s3nsowner
+from hovo.s3ns_owner import retrieve_s3ns_owner
 from hovo.stage import retrieve_stage
 from hovo.structural import rse
 from hovo.warning import warning
-from hovo.doc import DOC
+from hovo import state
+from hovo.const import BugidVal
+from hovo.const import InterVal
+from hovo.const import TitleVal
+from hovo import googleapi
 
 def parse_table(element):
-    global S
 
-    bugid = {}
-    title = {}
+    #bugid = {}
+    #inter = {}
+    #title = {}
 
-    # The text in table cells are in nested Structural Elements and tables may be
-    # nested.
+    # The text in table cells are in nested Structural Elements and tables
+    # may be nested.
     table = element.get('table')
     rows = table.get('tableRows')
     # Too many rows indicate that this is not actually a step
@@ -46,107 +43,178 @@ def parse_table(element):
     # Not exactly two cells indicate that this is not actually a step
     if len(cells) != 2:
         return
+    
+    # Is this maybe our description?
+    content = cells[0].get('content')[0]
+    #text = rse(content)
+    if (not BugidVal.matches(content)
+        or not TitleVal.matches(content)):
+        return  # Patterns did not match: this is not our step
 
-    # Locate and record the bugid for the step
-    content = cells[0].get('content')
-    text = rse(content)
-    if not STEP.parse.search(text):
-        return  # Pattern did not match: this is not a step
+    # At this point we decide the table is our step template
+    state.bugid = BugidVal.extract(content)
+    state.inter = InterVal.extract(content)
+    state.title = TitleVal.extract(content)
+    if state.mode != state.MODE.ENGAGED:
+        warning(f"Likely missing heading 2 for step {state.bugid['value']}")
 
-#    content = cells[0].get('content')
-#    startIndex = content[0]['startIndex']
-#    endIndex = content[0]['endIndex']
-#    text = rse(content)
-#    bugid = STEP.parse.sub(STEP.BUGID, text)
-#    title = STEP.parse.sub(STEP.TITLE, text)
-#    if  not bugid != text or not title != text:
-#        return  # Pattern did not match: this is not a bugid
-
-    # At this point we decide the table is a step template
-    if S.Mode != MODE.ENGAGED:
-        warning(f"Likely missing heading 2 for step {bugid}")
-
-    # Locate and record the data for the step bugid
-    bugid['start'] = content[0]['startIndex']
-    bugid['end'] = bugid['start'] + len(STEP.parse.sub(STEP.PART1, text))
-    bugid['text'] = STEP.parse.sub(STEP.PART1, text)
-    if O.import_buganizer:
-        bugid['target'] = S.Buganizer['bugid']
-    else:
-        bugid['target'] = BUGID.parse.sub(BUGID.MATCH, bugid['text'])
-
-    # Locate and record the data for the step title
-    title['start'] = bugid['end'] + 1
-    title['end'] = content[0]['endIndex'] - 1
-    title['text'] = STEP.parse.sub(STEP.PART2, text)
-    if O.import_buganizer:
-        title['target'] = S.Buganizer['title']
-    else:
-        title['target'] = TITLE.parse.sub(TITLE.MATCH, title['text'])
+#    bugid['start'] = content[0]['startIndex']
+#    bugid['end'] = bugid['start'] + len(STEP.parse.sub(STEP.PART1, text))
+#    bugid['text'] = STEP.parse.sub(STEP.PART1, text)
+#    if option.import_buganizer:
+#        bugid['target'] = state.Buganizer['bugid']
+#    else:
+#        bugid['target'] = BUGID.parse.sub(BUGID.MATCH, bugid['text'])
+#
+#    # Locate and record the data for the step title
+#    title['start'] = bugid['end'] + 1
+#    title['end'] = content[0]['endIndex'] - 1
+#    title['text'] = STEP.parse.sub(STEP.PART2, text)
+#    if option.import_buganizer:
+#        title['target'] = state.Buganizer['title']
+#    else:
+#        title['target'] = TITLE.parse.sub(TITLE.MATCH, title['text'])
 
     # Check if step ID is consistent with Heading 2
-    if bugid['target'] != S.Step['bugid']:
-        warning(f"Step bugId is different from Heading 2: compare\n- {bugid['target']}\n- {S.Step['bugid']}")
+    if state.bugid['value'] != state.bugid0['value']:
+        warning(f"Step 'bugId' values in Table and Heading 2 do not match: "
+                f"compare\n"
+                f"- {state.bugid['value']}\n"
+                f"- {state.bugid0['value']}")
             
     # Check is step Title is consistent with Heading 2
-    if title['target'] != S.Step['title']:
-        warning(f"Step title is different from Heading 2: compare\n- {title['target']}\n- {S.Step['title']}")
+    if state.title['value'] != state.title0['value']:
+        warning(f"Step 'title' values in Table and Heading 2 do not match: "
+                f"compare\n"
+                f"- {state.title['value']}\n"
+                f"- {state.title0['value']}")
 
-    if O.check_buganizer:
-        if bugid['target'] != S.Buganizer['bugid']:
+    if option.check_buganizer:
+        if state.bugid['value'] \
+            != BugidVal.b7r_to_value(state.Buganizer['bugid']):
             warning(
-                f"Bugid in Doc and Buganizer do not match: compare\n- {bugid['target']}\n- {S.Buganizer['bugid']}")
-        if title['target'] != S.Buganizer['title']:
+                f"Step 'bugid' values in Doc and Buganizer do not match: "
+                f"compare\n"
+                f"- {state.bugid['target']}\n"
+                f"- {state.Buganizer['bugid']}")
+        if state.title['value'] \
+            != TitleVal.b7r_to_value(state.Buganizer['title']):
             warning(
-                f"Title in Doc and Buganizer do not match: compare\n- {title['target']}\n- {S.Buganizer['title']}")
+                f"Step 'title' values in Doc and Buganizer do not match: "
+                f"compare\n"
+                f"- {state.title['target']}\n"
+                f"- {state.Buganizer['title']}")
 
-    DOC.color_text(COLOR.BLACK, title['start'], title['end'])
-    if title['text'] != title['target']:
-        DOC.replace(
-            title['target'],
-            title['start'],
-            title['end']
+    # Provision buganizer imports and cosmetic updates
+            
+    Fixer.update_style(
+        state.bugid0['start'],
+        state.bugid0['end'],
+        font_size=None,
+        url=f"{googleapi.BUGANIZER_URL}/issues/{state.bugid0['value']}",
+    )
+    if state.bugid0['text'] != state.bugid0['target']:
+        Fixer.replace(
+            state.bugid0['target'],
+            state.bugid0['start'],
+            state.bugid0['end'],
         )
-    DOC.color_text(COLOR.BLACK, bugid['start'], bugid['end'])
-    if bugid['text'] != bugid['target']:
-        DOC.replace(
-            bugid['target'],
-            bugid['start'],
-            bugid['end']
+    Fixer.update_style(
+        state.inter0['start'],
+        state.inter0['end'],
+        font_size=16,
+        url=f"",
+    )
+    if state.inter0['text'] != state.inter0['target']:
+        Fixer.replace(
+            state.inter0['target'],
+            state.inter0['start'],
+            state.inter0['end'],
         )
-
-    print(json.dumps(DOC.get_inplace_requests(), indent=2))
-    print(json.dumps(DOC.get_moving_requests(), indent=2))
+    Fixer.update_style(
+        state.title0['start'],
+        state.title0['end'],
+        font_size=16,
+    )
+    if state.title0['text'] != state.title0['target']:
+        Fixer.replace(
+            state.title0['target'],
+            state.title0['start'],
+            state.title0['end'],
+        )
+    Fixer.update_style(
+        state.bugid['start'],
+        state.bugid['end'],
+        url=f"{googleapi.BUGANIZER_URL}/issues/{state.bugid0['value']}",
+    )
+    if state.bugid['text'] != state.bugid['target']:
+        Fixer.replace(
+            state.bugid['target'],
+            state.bugid['start'],
+            state.bugid['end']
+        )
+    Fixer.update_style(
+        state.inter['start'],
+        state.inter['end'],
+        url=f"",
+    )
+    if state.inter['text'] != state.inter['target']:
+        Fixer.replace(
+            state.inter['target'],
+            state.inter['start'],
+            state.inter['end'],
+        )
+    Fixer.update_style(
+        state.title['start'],
+        state.title['end'],
+        #url=f"{googleapi.DOCS_URL}/{option.doc_id}#heading={state.headingId}",
+        url=f"#heading={state.headingId}",
+    )
+    if state.title['text'] != state.title['target']:
+        Fixer.replace(
+            state.title['target'],
+            state.title['start'],
+            state.title['end'],
+        )
     
-    S.Step['bugid'] = bugid
-    S.Step['title'] = title
+    # Are we on a special mission?
+    match glob.mission:
+        case None:
+            pass
+        case glob.Mission.ROW_MISSION:
+            if option.remove_row:
+                Fixer.remove_row(
+                    option.row,
+                    element['startIndex'],
+                )
+            elif option.relabel_row != None:
+                cell = rows[option.row].get('tableCells')[0]
+                Fixer.replace(option.relabel_row, cell['startIndex'] + 1,
+                              cell['endIndex'] - 1)
+        case _:
+            raise click.ClickException(f"unknown mission: {glob.mission}")
 
-
-
-
+    if option.traces:
+        Ansi.flash("*** DUMPING DOC.get_inplace_requests()...")
+        Ansi.flash(json.dumps(Fixer.get_inplace_requests(), indent=2))
+        Ansi.flash("***")
+        Ansi.flash("*** DUMPING DOC.get_moving_requests()...")
+        Ansi.flash(json.dumps(Fixer.get_moving_requests(), indent=2))
     
-    
-#    # Retrieve Indexes
-#    S.Step['startIndex'] = element['startIndex']
-#    S.Step['bugidStart'] = startIndex + len(STEP.parse.sub(STEP.BUGID_START, text))
-#    S.Step['bugidEnd'] = startIndex + len(STEP.parse.sub(STEP.BUGID_END, text))
-#    S.Step['titleStart'] = startIndex + len(STEP.parse.sub(STEP.TITLE_START, text))
-#    S.Step['titleEnd'] = startIndex + len(STEP.parse.sub(STEP.TITLE_END, text))
-
     # Retrieve Stage
     retrieve_stage(rows)
 
     # Retrieve Area
-    retrieve_area(rows)
+    retrieve_areas(rows)
 
     # Retrieve Leader
     retrieve_leader(rows)
 
     # Retrieve S3NS owner
-    retrieve_s3nsowner(rows)
+    retrieve_s3ns_owner(rows)
 
     # Retrieve Google owner
-    retrieve_googleowner(rows)
+    retrieve_google_owner(rows)
 
     # Retrieve Maturity
     retrieve_maturity(rows)
@@ -157,17 +225,19 @@ def parse_table(element):
     # Retrieve Duration
     retrieve_duration(rows)
 
+    return
+
     # Retrieve Google Duration
-    retrieve_gduration(rows)
+    retrieve_google_duration(rows)
 
     # Retrieve the startIndex of the first cell of the nine's row
-    S.Step['forcedStart'] = rows[9]['tableCells'][0]['startIndex']
-    S.Step['forcedEnd'] = rows[9]['tableCells'][0]['endIndex']
+    state.Step['forcedStart'] = rows[9]['tableCells'][0]['startIndex']
+    state.Step['forcedEnd'] = rows[9]['tableCells'][0]['endIndex']
 
 
 
-    #if (S.Step['leader'] in [ 'S3NS', 'joint']
-    #    and S.Step['maturity'] != 3):
-    #    S.Step['assignees'] = { S.Step['s3ns_email'] }
+    #if (state.Step['leader'] in [ 'S3NS', 'joint']
+    #    and state.Step['maturity'] != 3):
+    #    state.Step['assignees'] = { state.Step['s3ns_email'] }
     #else:
-    #    S.Step['assignees'] = { }
+    #    state.Step['assignees'] = { }

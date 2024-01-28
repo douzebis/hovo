@@ -1,7 +1,13 @@
 # Secrets
+bugs.json
+cookies.json
 credentials.json
 token.json
-cookies.json
+
+# Stashed
+/trash
+*.trashed
+*.orig
 
 # Misc
 .DS_Store

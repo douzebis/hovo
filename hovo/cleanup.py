@@ -4,10 +4,9 @@ import json
 
 import click
 
-from hovo.const import ACOL
-from hovo.const import COLOR
-from hovo.const import P
-from hovo.glob import D
+from hovo.colors import Ansi
+from hovo.colors import Rgb
+from hovo import glob
 
 def cleanup(docs, doc_id):
     global G
@@ -39,7 +38,7 @@ def cleanup(docs, doc_id):
 
     updateRequests = []
 
-    ACOL.print('Highlighting missing BugIds in the document...', color=ACOL.GRAY)
+    Ansi.print('Highlighting missing BugIds in the document...', color=Ansi.GRAY)
 #    for bug in G.Bugs:
 #        updateRequests.append(
 #            {
@@ -76,7 +75,7 @@ def cleanup(docs, doc_id):
 #                    }
 #                }
 #            )
-#        step = next((step for step in D.Steps if step['bugid'] == bug['bugid']), None)
+#        step = next((step for step in hovo.Steps if step['bugid'] == bug['bugid']), None)
 #        if step != None:
 #            if (step['title'] != bug['title']
 #                and step['bugid'] != P.MISSINGBUG):
@@ -100,8 +99,8 @@ def cleanup(docs, doc_id):
 #                }
 #            )
 
-    ACOL.print('Fixing table keys in the document...', color=ACOL.GRAY)
-    for step in D.Steps:
+    Ansi.print('Fixing table keys in the document...', color=Ansi.GRAY)
+    for step in glob.steps:
         if G.add_row == 'True':
             updateRequests.append(
                 {
@@ -231,7 +230,7 @@ def cleanup(docs, doc_id):
                     'textStyle': {
                         'foregroundColor': {
                             'color': {
-                                'rgbColor': COLOR.GOLD
+                                'rgbColor': Rgb.LIGHTNING_YELLOW
                             }
                         }
                     },
@@ -276,7 +275,7 @@ def cleanup(docs, doc_id):
         body={'requests': updateRequests}
     ).execute()
 
-    #for step in reversed(D.Steps):
+    #for step in reversed(hovo.Steps):
     #    print(step['startIndex'])
     #    updateRequests.append([
     #        {

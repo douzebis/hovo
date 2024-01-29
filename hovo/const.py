@@ -561,6 +561,14 @@ class S3nsOwnerVal:
         }
     
     @classmethod
+    def text_to_val(cls, text):
+        return text
+    
+    @classmethod
+    def val_to_text(cls, text):
+        return text
+    
+    @classmethod
     def b7r_to_val(cls, text):
         return text
 
@@ -631,6 +639,14 @@ class GoogleOwnerVal:
             'name': owner['name'],
             'email': owner['email'],
         }
+    
+    @classmethod
+    def text_to_val(cls, text):
+        return text
+    
+    @classmethod
+    def val_to_text(cls, text):
+        return text
     
     @classmethod
     def b7r_to_val(cls, text):

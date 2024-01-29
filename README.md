@@ -102,6 +102,12 @@ hovo --doc-id DOC_ID --process
 - Produce dependency graph
 - Produce Gantt chart
 - Publish indicators on internal website
+- Find a way to use the "person" information from Buganizer and correlate
+  it with S3ns owners and Google owners.
+- Find a way to import S3ns and Google owners information from Buganizer - may
+  require redesigning the way `FieldVal.text_to_val()` and provide the
+  possibility for custom insert. At least it would be nice that
+  `--check-buganizer` handles it correctly
 - In the charts, color the nodes according to leadership
 - Fix `hovo row n --remove` so that it does not panic if row is out of range
 - Add a `hovo row n --add label` option

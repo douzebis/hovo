@@ -62,7 +62,7 @@ def retrieve_maturity(rows):
             val['start'],
             val['end'],
         )
-    if not option.dry_run and option.export_maturity:
+    if not option.dry_run and option.update_b7r_maturity:
         if val['value'] != val['b7r']:
             set_b7r_field(state.bugid['value'], 'maturity', val['value'])
     

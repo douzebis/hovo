@@ -1,5 +1,6 @@
 __package__ = 'hovo'
 
+import copy
 import re
 
 import click
@@ -101,16 +102,16 @@ class BugidVal:
 
     @classmethod
     def matches(cls, elems):
-        text = rbe(elems)[:-1]
+        text = elems if isinstance(elems, str) else rbe(elems)[:-1]
         res = cls.PARSER.search(text)
         return res
     
     @classmethod
     def extract(cls, elems):
-        if not isinstance(elems, list):
-            raise click.ClickException("not a structured element")
-        text = rbe(elems)[:-1]
-        start = elems[0]['startIndex']
+        #if not isinstance(elems, list):
+        #    raise click.ClickException("not a structured element")
+        text = elems if isinstance(elems, str) else rbe(elems)[:-1]
+        start = 0 if isinstance(elems, str) else elems[0]['startIndex']
         bugid = cls.PARSER.sub(rf"\g<prolog>\g<bugid>", text)
         end = start + len(bugid)
         target = cls.PARSER.sub(rf"\g<bugid>", text)
@@ -175,12 +176,17 @@ class TitleVal:
 
     @classmethod
     def matches(cls, elems):
-        return cls.PARSER.search(rbe(elems)[:-1])
+#        print("*** matches: ", elems)
+        text = elems if isinstance(elems, str) else rbe(elems)[:-1]
+#        if text.startswith("322845751"):
+#            pass
+        return cls.PARSER.search(text)
     
     @classmethod
     def extract(cls, elems):
-        text = rbe(elems)[:-1]
-        start = elems[0]['startIndex'] \
+#        print("*** extract: ", elems)
+        text = elems if isinstance(elems, str) else rbe(elems)[:-1]
+        start = 0 if isinstance(elems, str) else elems[0]['startIndex'] \
             + len(cls.PARSER.sub(rf"\g<prolog>\g<bugid>\g<inter>", text))
         title = cls.PARSER.sub(rf"\g<title>\g<epilog>", text)
         end = start + len(title)
@@ -624,20 +630,18 @@ class GoogleOwnerVal:
 
     @classmethod
     def extract(cls, content):
-        try:
-            owner = content[0]['paragraph']['elements'][0]\
-                    ['person']['personProperties']
-        except:
-            #raise ValueError("<PERSON>")
-            owner = { 'name': None, 'email': None }
+        if len(content) == 0: raise Exception
+        start = content[0]['startIndex']
+        end = content[-1]['endIndex']
+        text = rse(content)
+        value = content
+        target = copy.deepcopy(content)
         return {
-            'text': '',
-            'start': content[0]['startIndex'],
-            'end': content[0]['startIndex'],
-            'target': '',
-            'value': owner['name'],
-            'name': owner['name'],
-            'email': owner['email'],
+            'text': text,
+            'start': start,
+            'end': end,
+            'target': target,
+            'value': value,
         }
     
     @classmethod
@@ -765,7 +769,7 @@ class MaturityVal:
 # == PARSING EFFORT DATA =======================================================
 
 class EffortKey:
-    REGEX = rf'Effort - eng days'
+    REGEX = rf'S3ns effort - engineers·days'
     PARSER = re.compile(
         rf"^(?P<prolog>{SPACE}*)"
         rf"(?P<payload>{REGEX})"
@@ -857,7 +861,7 @@ class EffortVal:
 # == PARSING DURATION DATA =======================================================
 
 class DurationKey:
-    REGEX = rf'Duration - cal days'
+    REGEX = rf'Duration - calendar days'
     PARSER = re.compile(
         rf"^(?P<prolog>{SPACE}*)"
         rf"(?P<payload>{REGEX})"

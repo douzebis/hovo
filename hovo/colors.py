@@ -20,12 +20,16 @@ class Rgb:
     BEER = rgb('#FBB117')
     BLACK = rgb('#000000')
     BRIGHT_ORANGE = rgb('#FF5B00')
+    GERALDINE = rgb('#FB8989')
     HAWKES_BLUE = rgb('#D4E2FC')
+    JORDY_BLUE = rgb('#8AB9F1')
     LIGHT_ROSE = rgb('#FFC5CB')
     LIGHTNING_YELLOW = rgb('#FCC01E')
     MOONRAKER = rgb('#D6CEF6')
+    NAPLES_YELLOW = rgb('#FADA5E')
     RED = rgb('#FF0000')
     WARM_RED = rgb('#FF3F00')
+    
 
     RANDOM = {'red': random.random(), 'green': random.random(), 'blue': random.random()}
 
@@ -33,9 +37,9 @@ class Rgb:
     ONE_STAR = WARM_RED
     TWO_STARS = BEER
     THREE_STARS = LIGHTNING_YELLOW
-    S3NS = HAWKES_BLUE
-    JOINT = MOONRAKER
-    GOOGLE = LIGHT_ROSE
+    S3NS = JORDY_BLUE
+    JOINT = NAPLES_YELLOW
+    GOOGLE = GERALDINE
 
 # ANSI escape codes for text colors
 class Ansi:
@@ -55,21 +59,34 @@ class Ansi:
     BRIGHT_MAGENTA = "\033[95m"
     BRIGHT_CYAN = "\033[96m"
     BRIGHT_WHITE = "\033[97m"
+    __msgs_count = 0
+
     @staticmethod
-    def print(message, color=RESET, **kwargs):
-        print(color + message + Ansi.RESET, **kwargs)
+    def __init__():
+        Ansi.__msgs_count = 0
     @staticmethod
-    def flash(message, **kwargs):
-        print(Ansi.MAGENTA + message + Ansi.RESET, file=sys.stderr, **kwargs)
+    def print(message, color=RESET, kill_line=False, **kwargs):
+        Ansi.__msgs_count += 1
+        print(("\r\033[K" if kill_line else "\n")
+              + color + message + Ansi.RESET, end='', **kwargs)
     @staticmethod
-    def note(message, **kwargs):
-        print(Ansi.WHITE + message + Ansi.RESET, file=sys.stderr, **kwargs)
+    def flash(message, kill_line=False, **kwargs):
+        Ansi.print(message, color=Ansi.MAGENTA, kill_line=kill_line, file=sys.stderr, **kwargs)
     @staticmethod
-    def info(message, **kwargs):
-        print(Ansi.GRAY + message + Ansi.RESET, file=sys.stderr, **kwargs)
+    def note(message, kill_line=False, **kwargs):
+        Ansi.print(message, color=Ansi.WHITE, kill_line=kill_line, file=sys.stderr, **kwargs)
     @staticmethod
-    def warning(message, **kwargs):
-        print(Ansi.BRIGHT_YELLOW + message + Ansi.RESET, file=sys.stderr, **kwargs)
+    def info(message, kill_line=False, **kwargs):
+        Ansi.print(message, color=Ansi.GRAY, kill_line=kill_line, file=sys.stderr, **kwargs)
     @staticmethod
-    def error(message, **kwargs):
-        print(Ansi.BRIGHT_RED + message + Ansi.RESET, file=sys.stderr, **kwargs)
+    def warning(message, kill_line=False, **kwargs):
+        Ansi.print(message, color=Ansi.BRIGHT_YELLOW, kill_line=kill_line, file=sys.stderr, **kwargs)
+    @staticmethod
+    def error(message, kill_line=False, **kwargs):
+        Ansi.print(message, color=Ansi.BRIGHT_RED, kill_line=kill_line, file=sys.stderr, **kwargs)
+    @staticmethod
+    def msgs_count():
+        return Ansi.__msgs_count
+    @staticmethod
+    def kill_line():
+        print("\r\033[")

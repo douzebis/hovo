@@ -23,7 +23,7 @@ from hovo import state
 from hovo.const import BugidVal
 from hovo.const import InterVal
 from hovo.const import TitleVal
-from hovo import googleapi
+from hovo import dot_google
 
 def parse_table(element):
 
@@ -57,34 +57,16 @@ def parse_table(element):
     state.title = TitleVal.extract(content)
     if state.mode != state.ParsingMode.ENGAGED:
         warning(f"Likely missing heading 2 for step {state.bugid['value']}")
-        return
-
-#    bugid['start'] = content[0]['startIndex']
-#    bugid['end'] = bugid['start'] + len(STEP.parse.sub(STEP.PART1, text))
-#    bugid['text'] = STEP.parse.sub(STEP.PART1, text)
-#    if option.import_buganizer:
-#        bugid['target'] = state.Buganizer['bugid']
-#    else:
-#        bugid['target'] = BUGID.parse.sub(BUGID.MATCH, bugid['text'])
-#
-#    # Locate and record the data for the step title
-#    title['start'] = bugid['end'] + 1
-#    title['end'] = content[0]['endIndex'] - 1
-#    title['text'] = STEP.parse.sub(STEP.PART2, text)
-#    if option.import_buganizer:
-#        title['target'] = state.Buganizer['title']
-#    else:
-#        title['target'] = TITLE.parse.sub(TITLE.MATCH, title['text'])
 
     # Check if step ID is consistent with Heading 2
-    if state.bugid['value'] != state.bugid0['value']:
+    if state.bugid0 != None and state.bugid['value'] != state.bugid0['value']:
         warning(f"Step 'bugId' values in Table and Heading 2 do not match: "
                 f"compare\n"
                 f"- {state.bugid['value']}\n"
                 f"- {state.bugid0['value']}")
             
     # Check is step Title is consistent with Heading 2
-    if state.title['value'] != state.title0['value']:
+    if state.title0 != None and state.title['value'] != state.title0['value']:
         warning(f"Step 'title' values in Table and Heading 2 do not match: "
                 f"compare\n"
                 f"- {state.title['value']}\n"
@@ -107,47 +89,52 @@ def parse_table(element):
                 f"- {state.Buganizer['title']}")
 
     # Provision buganizer imports and cosmetic updates
-            
-    Fixer.update_style(
-        state.bugid0['start'],
-        state.bugid0['end'],
-        font_size=None,
-        url=f"{googleapi.BUGANIZER_URL}/issues/{state.bugid0['value']}",
-    )
 
-    if state.bugid0['text'] != state.bugid0['target']:
-        Fixer.replace(
-            state.bugid0['target'],
+    if state.bugid0 != None:
+        Fixer.update_style(
             state.bugid0['start'],
             state.bugid0['end'],
+            font_size=None,
+            url=f"{dot_google.ISSUETRACKER_URL}/issues/{state.bugid0['value']}",
         )
-    Fixer.update_style(
-        state.inter0['start'],
-        state.inter0['end'],
-        font_size=16,
-        url=f"",
-    )
-    if state.inter0['text'] != state.inter0['target']:
-        Fixer.replace(
-            state.inter0['target'],
+        if state.bugid0['text'] != state.bugid0['target']:
+            Fixer.replace(
+                state.bugid0['target'],
+                state.bugid0['start'],
+                state.bugid0['end'],
+            )
+
+    if state.inter0 != None:
+        Fixer.update_style(
             state.inter0['start'],
             state.inter0['end'],
+            font_size=16,
+            url=f"",
         )
-    Fixer.update_style(
-        state.title0['start'],
-        state.title0['end'],
-        font_size=16,
-    )
-    if state.title0['text'] != state.title0['target']:
-        Fixer.replace(
-            state.title0['target'],
+        if state.inter0['text'] != state.inter0['target']:
+            Fixer.replace(
+                state.inter0['target'],
+                state.inter0['start'],
+                state.inter0['end'],
+            )
+
+    if state.title0 != None:
+        Fixer.update_style(
             state.title0['start'],
             state.title0['end'],
+            font_size=16,
         )
+        if state.title0['text'] != state.title0['target']:
+            Fixer.replace(
+                state.title0['target'],
+                state.title0['start'],
+                state.title0['end'],
+            )
+
     Fixer.update_style(
         state.bugid['start'],
         state.bugid['end'],
-        url=f"{googleapi.BUGANIZER_URL}/issues/{state.bugid0['value']}",
+        url=f"{dot_google.ISSUETRACKER_URL}/issues/{state.bugid['value']}",
     )
     if state.bugid['text'] != state.bugid['target']:
         Fixer.replace(
@@ -155,6 +142,7 @@ def parse_table(element):
             state.bugid['start'],
             state.bugid['end']
         )
+
     Fixer.update_style(
         state.inter['start'],
         state.inter['end'],
@@ -166,6 +154,7 @@ def parse_table(element):
             state.inter['start'],
             state.inter['end'],
         )
+
     Fixer.update_style(
         state.title['start'],
         state.title['end'],
@@ -196,12 +185,6 @@ def parse_table(element):
                                 cell['endIndex'] - 1)
         case _:
             raise click.ClickException(f"unknown mission: {glob.mission}")
-
-#    if option.traces:
-#        Ansi.flash("\n*** DUMPING DOC.get_inplace_requests()...")
-#        Ansi.flash(json.dumps(Fixer.get_inplace_requests(), indent=2))
-#        Ansi.flash("\n*** DUMPING DOC.get_moving_requests()...")
-#        Ansi.flash(json.dumps(Fixer.get_moving_requests(), indent=2))
     
     # Retrieve Stage
     retrieve_stage(rows)

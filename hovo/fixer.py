@@ -130,7 +130,7 @@ class Fixer:
         )
     
     # https://developers.google.com/docs/api/how-tos/tables
-    def replace(text, start, end):
+    def replace(text, start, end, url=None):
         requests = []
         if start < end:
             requests.append(
@@ -153,6 +153,23 @@ class Fixer:
                 },
             }
         )
+        if url != None:
+            requests.append(
+                {
+                    'updateTextStyle' : {
+                        'textStyle': {
+                            "link": {
+                                "url": url,
+                            }
+                        },
+                        'fields': 'link,',
+                        'range': {
+                            'startIndex': start,
+                            'endIndex': start + len(text)
+                        }
+                    }
+                }
+            )
         Fixer.Requests.append(
             {
                 'index': start,

@@ -17,6 +17,10 @@ pip install --upgrade google-auth-oauthlib
 pip install --upgrade js2py
 pip install --upgrade oauth2client
 pip install --upgrade selenium
+pip install --upgrade pytz
+pip install --upgrade tzlocal
+pip install --upgrade fuzzywuzzy
+pip install --upgrade python-Levenshtein
 pip install --editable .
 ```
 
@@ -57,6 +61,13 @@ hovo --doc-id DOC_ID --process
     convenient interface with humane user. This database can be used as source
     or truth, and backends can be developed to produce indicators and various
     operational views.
+- Secrets and sensitive data not store with the code:
+  - `~/.hovo/token.json`
+  - `~/.hovo/persons.json`
+  - `~/.hovo/cookies.json`
+  - `~/.hovo/credentials.json`
+- Extracting person names from a free-form list: requires NLP-like
+  heuristics.
 - structural elements: beware of "silent" elements that still consume one
   position - e.g., `pageBreak`
 - batch-updating the document: intelligent backwards sorting first

@@ -2,7 +2,7 @@ __package__ = 'hovo'
 
 import click
 
-from hovo import glob, googleapi
+from hovo import dot_google, glob
 from hovo.fixer import Fixer
 
 NO_BUG_ID = '000000000'
@@ -27,7 +27,7 @@ def register_dependency(bugid, inter, title):
         bugid['start'],
         bugid['end'],
         font_size=11,
-        url=f"{googleapi.BUGANIZER_URL}/issues/{bugid['value']}",
+        url=f"{dot_google.ISSUETRACKER_URL}/issues/{bugid['value']}",
     )
     if bugid['text'] != bugid['target']:
         Fixer.replace(

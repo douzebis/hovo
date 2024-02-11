@@ -2,18 +2,12 @@ __package__ = 'hovo'
 
 import sys
 
-from hovo.colors import Ansi
-from hovo.const import KnownH2
-from hovo.const import BUGID
-from hovo.const import TITLE
-from hovo import option
-from hovo.structural import rpe, rse
+from hovo import glob, option, state
 from hovo.buganizer import get_b7r_fields
-from hovo.const import BugidVal
-from hovo.const import InterVal
-from hovo.const import TitleVal
-from hovo import glob
-from hovo import state
+from hovo.colors import Ansi
+from hovo.const import BUGID, TITLE, BugidVal, InterVal, KnownH2, TitleVal
+from hovo.structural import rpe, rse
+
 
 def parse_h2(element):
     try:
@@ -62,20 +56,32 @@ def parse_h2(element):
     if t1 and t2:
         state.mode = state.ParsingMode.ENGAGED
 
-        state.bugid0 = BugidVal.extract(elems)
-        state.inter0 = InterVal.extract(elems)
-        state.title0 = TitleVal.extract(elems)
-        state.bugid = None
-        state.inter = None
-        state.title = None
-        state.headingId = headingId
-        state.cmnts = []
-        state.depends_on = []
-        state.unlocks = []
-    
+        state.init_step(
+            bugid0=BugidVal.extract(elems),
+            inter0=InterVal.extract(elems),
+            title0=TitleVal.extract(elems),
+            bugid=None,
+            inter=None,
+            title=None,
+            headingId=headingId,
+            cmnts=[],
+            depends_on=[],
+            unlocks=[],
+        )
+
+        # Kill the previous "Parsing..." message if it was uneventful
+        # in order to decrease the need for viewer "attention span"
+        kill_line = glob.msgs_count == Ansi.msgs_count()
         Ansi.note(f"[{state.bugid0['start']}] "\
                   f"Parsing {state.bugid0['target']} "\
-                  f"{state.title0['target']}...")
+                  f"{state.title0['target']}...",
+                  kill_line=kill_line)
+        glob.msgs_count = Ansi.msgs_count()
         if option.check_buganizer or option.import_buganizer \
-            or option.export_maturity:
-            state.Buganizer = get_b7r_fields(state.bugid0['value'])
+            or option.update_b7r_maturity:
+            try:
+                state.Buganizer = get_b7r_fields(state.bugid0['value'])
+            except Exception as e:
+                raise e
+            pass
+

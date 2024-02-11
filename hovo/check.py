@@ -5,21 +5,31 @@ import io
 import json
 import re
 import sys
+import textwrap
 import zipfile
+from datetime import datetime
+from hovo.backend.comments import get_comments
+from hovo.backend.graphs import get_dependency_graphs
+from hovo.backend.progress import get_progress
+from hovo.patch_b7r import patch_buganizer
+
+from pytz import common_timezones_set
 
 import click
 from bs4 import BeautifulSoup
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
+from tzlocal import get_localzone
 
-from hovo import glob, googleapi, option, state
+from hovo import dot_google, glob, option, state
 from hovo.cleanup import cleanup
 from hovo.colors import Ansi
-from hovo.const import STAGE, STAGES
+from hovo.const import STAGE, STAGES, BugidVal, TitleVal
 from hovo.depend import parse_depend
 from hovo.fixer import Fixer
 from hovo.heading2 import parse_h2
 from hovo.heading3 import parse_h3
+from hovo.structural import rpe, rse
 from hovo.table import parse_table
 
 
@@ -40,7 +50,9 @@ def parse_steps(elements):
                     glob.commit_step()
                     continue
                 elif style == 'HEADING_2':
-                    glob.commit_step()
+                    # Don't commit the step on an empty H2
+                    if rpe(element['paragraph']['elements']).strip() != '':
+                        glob.commit_step()
                     parse_h2(element)
                     continue
                 elif style == 'HEADING_3':
@@ -96,40 +108,92 @@ def check_hovo():
         Ansi.flash(json.dumps(Fixer.get_moving_requests(), indent=2))
         
     if not option.dry_run:
-        googleapi.docs.documents().batchUpdate(
+        dot_google.docs.documents().batchUpdate(
             documentId=option.doc_id,
-            body={'requests': Fixer.get_inplace_requests() \
-                + Fixer.get_moving_requests()}
+            body={'requests': Fixer.get_inplace_requests()}
         ).execute()
+        moving_requests = Fixer.get_moving_requests()
+        dot_google.docs.documents().batchUpdate(
+            documentId=option.doc_id,
+            body={'requests': moving_requests}
+        ).execute()
+        #for moving_request in moving_requests:
+        #    print(json.dumps(moving_request, indent=2))
+        #    dot_google.docs.documents().batchUpdate(
+        #        documentId=option.doc_id,
+        #        body={'requests': [moving_request]}
+        #    ).execute()
+    
+# -- Check consistency of depend_on vs unlocks ---------------------------------
+        
+    Ansi.info("\nCHECKING THE CONSISTENCY OF DEPENDENCIES")
+    for step in glob.steps:
+        step_id = step['bugid']['value']
+        missing_depends = []
+        missing_unlocks = []
+        for sibling in glob.steps:
+            sibling_id = sibling['bugid']['value']
+            if sibling_id == step_id:
+                continue
+            if next((s for s in sibling['unlocks']
+                     if s['value'] == step_id), None) != None \
+               and next((s for s in step['depends_on']
+                     if s['value'] == sibling_id), None) == None:
+            #if step_id in sibling['unlocks'] and not sibling_id in step['depends_on']:
+                missing_depends.append(sibling)
+            if next((s for s in sibling['depends_on']
+                     if s['value'] == step_id), None) != None \
+               and next((s for s in step['unlocks']
+                     if s['value'] == sibling_id), None) == None:
+            #if step_id in sibling['depends_on'] and not sibling_id in step['unlocks']:
+                missing_unlocks.append(sibling)
+        if len(missing_depends) == 0 and len(missing_unlocks) == 0:
+            #ACOL.print(f"{step_id}: OK", color=ACOL.GRAY)
+            continue
+        Ansi.warning(f"[{step['stage_val']['value']}] {step_id} {step['title']['value']}...")
+        if len(missing_depends) > 0:
+            Ansi.warning(f"- Missing 'depends on':")
+            for sibling in missing_depends:
+                Ansi.print(f"  [{sibling['stage_val']['value']}] {sibling['bugid']['value']} {sibling['title']['value']}")
+        if len(missing_unlocks) > 0:
+            Ansi.warning(f"- Missing 'unlocks':")
+            for sibling in missing_unlocks:
+                Ansi.warning(f"  [{sibling['stage_val']['value']}] {sibling['bugid']['value']} {sibling['title']['value']}")
 
+# -- Prepare HOVO indicators ---------------------------------------------------
+    
+    Ansi.note("\nPreparing HOVO Indicators...")
+    indicators_md = "# HOVO indicators\n\n"
+        
+# -- Prepare HOVO Progress indicators ------------------------------------------
+        
+    Ansi.note("\nPreparing HOVO Progress Indicators...")
+    indicators_md += get_progress()
+    
+# -- Prepare HOVO Comments Assignees -------------------------------------------
+        
+    Ansi.note("\nPreparing HOVO Comments Assignees...")
+    comments_assignees, comments = get_comments()
+    indicators_md += comments_assignees
+
+# -- Prepare HOVO Dependency Graphs --------------------------------------------
+    
+    Ansi.note("\nPreparing HOVO Dependency Graphs...")
+    graphs = get_dependency_graphs()
+    indicators_md += graphs
+    
+# -- Flush HOVO indicators to disk ---------------------------------------------
+    
+    with open("/Users/fred/code/indicators/docs/hovo-indicators.md", 'w') as f:
+        f.write(indicators_md)
+
+# -- Patch Buganizer -----------------------------------------------------------
+    
+    patch_buganizer(comments)
     return
 
-    Ansi.print("\nHOVO Maturity...", color=Ansi.GRAY, file=sys.stderr)
-    count = {
-        getattr(STAGE, key): 0
-        for key in dir(STAGE)
-        if not key.startswith("__") and not inspect.ismethod(getattr(STAGE, key))
-    }
-    sigma = {
-        getattr(STAGE, key): 0
-        for key in dir(STAGE)
-        if not key.startswith("__") and not inspect.ismethod(getattr(STAGE, key))
-    }
-    # Iterate through steps
-    for step in G.Steps:
-        stage = step['stage']
-        count[stage] += 1
-        sigma[stage] += step['maturity']
-    Count = sum(count.values())
-    Sigma = sum(sigma.values())
-    Ansi.print(
-        f"Global maturity: {round(100*Sigma/(3*Count)) if Count > 0 else 'NaN'}%",
-        color=Ansi.GREEN)
-    for stage in STAGES:
-        Ansi.print(
-            f"- {stage}: {round(100*sigma[stage]/(3*count[stage])) if count[stage] > 0 else 'NaN'}%",
-            color=Ansi.GREEN)
 
+    """
     Ansi.print("\nCHECKING THE CONSISTENCY OF DEPENDENCIES", color=Ansi.GRAY, file=sys.stderr)
     for step in G.Steps:
         step_id = step['bugid']
@@ -189,12 +253,13 @@ def check_hovo():
             task += f" {sibling_id}"
         task += ", 1d"
         Ansi.print(f"  {task}", color=Ansi.GREEN)
-    
+    """
+
 ############
 # ASSIGNEES
     try:
-        request = drive.files().export_media(
-            fileId=doc_id, mimeType="application/zip"
+        request = dot_google.drive.files().export_media(
+            fileId=option.doc_id, mimeType="application/zip"
         )
         zip_file = io.BytesIO()
         downloader = MediaIoBaseDownload(zip_file, request)
@@ -207,6 +272,13 @@ def check_hovo():
     with zipfile.ZipFile(zip_file, 'r') as zip_ref:
         # We extract the first file in the zip
         html_content = zip_ref.read(zip_ref.namelist()[0])
+    
+    with open('/Users/fred/code/indicators/docs/hovo.html', 'w') as f:
+        f.write(html_content.decode('utf-8'))
+    toto = dot_google.drive.comments()
+    comments = toto.list(fileId=option.doc_id, fields='comments').execute().get('comments', [])
+    print(json.dumps(comments, indent=2))
+    return
         
     # Parse the HTML content with BeautifulSoup
     soup = BeautifulSoup(html_content, 'html.parser')
@@ -218,18 +290,24 @@ def check_hovo():
             or tag.has_attr('id') and tag['id'].startswith('cmnt')))
 
     # Print the contents of the enclosing <div> for each matching tag
-    G.Cmnts = []
+    glob.comments = []
     current_bugid = None
     for tag in target_tags:
         if tag.name == 'h2':
             if current_bugid != None:
-                step = next(step for step in G.Steps if step['bugid'] == current_bugid)
+                step = next(step for step in glob.steps if step['bugid']['value'] == current_bugid)
                 step['cmnts'] = current_cmnts
-            bugid = STEP.parse.sub(STEP.BUGID, tag.text)
-            if not bugid != tag.text:
+#            print(tag.text)
+            if not BugidVal.matches(tag.text) or not TitleVal.matches(tag.text):
                 current_bugid = None
                 continue
-            title  = STEP.parse.sub(STEP.TITLE, tag.text)
+            bugid = BugidVal.extract(tag.text)['value']
+            title = TitleVal.extract(tag.text)['value']
+            #bugid = STEP.parse.sub(STEP.BUGID, tag.text)
+            #if not bugid != tag.text:
+            #    current_bugid = None
+            #    continue
+            #title  = STEP.parse.sub(STEP.TITLE, tag.text)
             current_bugid = bugid
             current_cmnts = []
         elif tag.name == 'a':
@@ -248,27 +326,27 @@ def check_hovo():
                 text = enclosing_div.text.strip()
                 assignee = re.sub(r'.*_Assigned to ([^ ]*)_$', r'\1', text, flags=re.S)
                 if not assignee != text:
-                    G.Cmnts.append({'cmnt': cmnt})
+                    glob.comments.append({'cmnt': cmnt})
                 else:
-                    G.Cmnts.append({'cmnt': cmnt, 'assignee': assignee})
+                    glob.comments.append({'cmnt': cmnt, 'assignee': assignee})
                 continue
     if current_bugid != None:
-        step = next(step for step in G.Steps if step['bugid'] == current_bugid)
+        step = next(step for step in glob.steps if step['bugid']['value'] == current_bugid)
         step['cmnts'] = current_cmnts
 
     Ansi.print("\nBUGIDS PER ASSIGNEE", color=Ansi.GRAY, file=sys.stderr)
     assignee_bugids = {}
     # Iterate through bugids
-    for step in G.Steps:
-        bugid = step["bugid"]
-        if (step['leader'] != 'Google'
-            and step['maturity'] != 3):
-                assignee = step['s3ns_email']
+    for step in glob.steps:
+        bugid = step['bugid']['value']
+        if (step['leader_val']['value'] != 'Google'
+            and step['maturity_val']['value'] != 3):
+                assignee = step['s3nsowner_val']['email']
                 if assignee not in assignee_bugids:
                     assignee_bugids[assignee] = set()
                 assignee_bugids[assignee].add(bugid)
         for cmntid in step["cmnts"]:
-            cmnt = next((cmnt for cmnt in G.Cmnts if cmnt["cmnt"] == cmntid), None)
+            cmnt = next((cmnt for cmnt in glob.comments if cmnt["cmnt"] == cmntid), None)
             if "assignee" in cmnt:
                 assignee = cmnt["assignee"]
                 # Add bugid to the assignee_bugids dictionary
@@ -283,12 +361,12 @@ def check_hovo():
     Ansi.print("\nASSIGNEES PER BUGID", color=Ansi.GRAY, file=sys.stderr)
     bugid_comments = {}
     # Iterate through bugids
-    for step in G.Steps:
-        bugid = step["bugid"]
+    for step in glob.steps:
+        bugid = step["bugid"]['value']
         comments_with_assignee = []
         # Iterate through comments for the current bugid
         for cmntid in step["cmnts"]:
-            cmnt = next(c for c in G.Cmnts if c['cmnt'] == cmntid)
+            cmnt = next(c for c in glob.comments if c['cmnt'] == cmntid)
             if cmnt and 'assignee' in cmnt:
                 comments_with_assignee.append(cmnt['assignee'])
         # Add bugid and corresponding comments with assignee to the dictionary
@@ -297,10 +375,12 @@ def check_hovo():
     # Display the result
     for bugid, comments_with_assignee in bugid_comments.items():
         Ansi.print(f"{bugid}: {comments_with_assignee}", color=Ansi.YELLOW)
-
+    """
     Ansi.print("\nCLEANING UP BUGIDS FORMATTING IN THE DOCUMENT", color=Ansi.GRAY, file=sys.stderr)
     cleanup(docs, doc_id)
+    """
 
+"""
 # hovo() is the entry point for shell completion
 #def hovo():
 #    print("BEFORE OPTIONS")
@@ -313,8 +393,6 @@ def check_hovo():
 ##    hovo()
 #    print("AT THE END")
 
-
-"""
     for bugid in [
         306596328,
         306596329,

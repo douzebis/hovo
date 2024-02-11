@@ -7,10 +7,13 @@ import click
 from bs4 import BeautifulSoup
 from js2py import EvalJs
 
-from hovo import cookies
+from hovo import cookies, glob, option
 from hovo.colors import Ansi
-from hovo.googleapi import BUGANIZER_URL
+from hovo.dot_google import ISSUETRACKER_URL
 from hovo.warning import warning
+from hovo import dot_user
+
+x_xsrf_token=""
 
 #class M: # Short for Magic
 #    PRIMARY = 0
@@ -34,6 +37,12 @@ class B7r:
         'b7r_name': "Assignee",
         'type': PRIMARY,
         'path': [0, 0, 1, 21, 9, 2, 0],
+    }
+    DESCRIPTION = {
+        'nickname': "description",
+        'b7r_name': "Description",
+        'type': PRIMARY,
+        'path': [0, 0, 1, 15, 19, 0],
     }
     DURATION = {
         'nickname': "duration",
@@ -92,18 +101,19 @@ FIELDS = [getattr(B7r, attr) for attr in dir(B7r) \
               and not attr in {'PRIMARY', 'EXTENDED', 'COMPONENT_ID'})]
 
 class B7rCache:
-    BUGS_FILE = 'bugs.json'
+    BUGS_PATH = ""
     bugs = []
     @staticmethod
     def load():
+        B7rCache.BUGS_PATH = f"{dot_user.DOT_HOVO}/{option.doc_id}/bugs.json"
         try:
-            with open(B7rCache.BUGS_FILE, 'r') as file:
+            with open(B7rCache.BUGS_PATH, 'r') as file:
                 # Deserialize the JSON list and assign it to the static field
                 B7rCache.bugs = json.load(file)
         except FileNotFoundError:
             pass
     def dump():
-        with open(B7rCache.BUGS_FILE, 'w') as file:
+        with open(B7rCache.BUGS_PATH, 'w') as file:
             json.dump(B7rCache.bugs, file)
 
 # The commented functions below have teen used to reverse engineer the Buganizer
@@ -179,7 +189,8 @@ def get_b7r_field(jspb, field):
     if jspb[0][0][1][21][0] != B7r.COMPONENT_ID:
         raise click.ClickException(
             f"Buganizer Component ID: expected "\
-                f"{B7r.COMPONENT_ID} got {node[13][1]}")
+                f"{B7r.COMPONENT_ID} got {jspb[0][0][1][21][0]}")
+#                f"{B7r.COMPONENT_ID} got {node[13][1]}")
 
     match field['type']:
         case B7r.PRIMARY:
@@ -218,14 +229,21 @@ def get_b7r_field(jspb, field):
 #    return node_label 
 
 def get_b7r_xsrf_token():
+    global x_xsrf_token
+
+    if x_xsrf_token != '': return x_xsrf_token
     # Fetch buganizer page
-    response = cookies.session.get(
+    response = glob.b7r_session.get(
+#        f"https://partnerissuetracker.corp.google.com/issues/304809981")
         f"https://partnerissuetracker.corp.google.com/issues")
 
     # Check if the request to the protected page was successful
     if response.status_code != 200:
         raise click.ClickException(
             f"Error accessing: {response.status_code}")
+    
+#    with open(f"/tmp/toto.html", 'w') as f:
+#        f.write(response.text)
     
     # Parse the HTML content using BeautifulSoup
     buganizer = BeautifulSoup(response.text, 'html.parser')
@@ -238,12 +256,15 @@ def get_b7r_xsrf_token():
     context = EvalJs({})
     context.execute(tags[2].string)
     jspb = context.buganizerSessionJspb
-    return jspb[2]
+    x_xsrf_token = jspb[2]
+    return x_xsrf_token
 
 def set_b7r_field(bugid, nickname, value):
+    global x_xsrf_token
+    global FIELDS
     field = next(f for f in FIELDS if f['nickname'] == nickname)
     newvalue = field['val_to_b7r'](value)
-    bug = get_b7r_fields(bugid, force=(cookies.x_xsrf_token == ""))
+    bug = get_b7r_fields(bugid, force=(x_xsrf_token == ""))
     Ansi.note(f"Updating B7R maturity: "
                 f"'{bug[nickname]}' to '{newvalue}'...")
     if field['type'] != B7r.EXTENDED:
@@ -279,15 +300,15 @@ def set_b7r_field(bugid, nickname, value):
         ]
       ]
     ]
-    url=f"{BUGANIZER_URL}/action/issues/{bugid}"
+    url=f"{ISSUETRACKER_URL}/action/issues/{bugid}"
     headers = {
-        'X-XSRF-Token': cookies.x_xsrf_token,
+        'X-XSRF-Token': x_xsrf_token,
         'Content-Type': 'application/json',
     }
     json_payload = json.dumps(payload)
 
     # Make the POST request with the JSON payload and X-XSRF-Token
-    response = cookies.session.post(url, data=json_payload, headers=headers)
+    response = cookies.glob.b7r_session.post(url, data=json_payload, headers=headers)
 
     # Check if the request was successful (status code 200)
     if response.status_code == 200:
@@ -295,12 +316,130 @@ def set_b7r_field(bugid, nickname, value):
     else:
         raise click.ClickException(f"{response.status_code}")
 
+def set_b7r_description(bugid, value):
+    if bugid == None or not isinstance(value, str): return
+    payload = \
+        [   None,
+            None,
+            None,
+            None,
+            [   bugid,
+                1,
+                [   value,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    2]]]
+    url=f"{ISSUETRACKER_URL}/action/issues/{bugid}/updateComment"
+    headers = {
+        'X-XSRF-Token': get_b7r_xsrf_token(),
+        'Content-Type': 'application/json',
+    }
+    json_payload = json.dumps(payload)
+
+    # Make the POST request with the JSON payload and X-XSRF-Token
+    response = glob.b7r_session.post(url, data=json_payload, headers=headers)
+
+    # Check if the request was successful (status code 200)
+    if response.status_code != 200:
+        raise click.ClickException(f"{response.status_code}")
+    return response
+
+def add_b7r_comment(bugid, value):
+    if bugid == None or not isinstance(value, str): return
+    payload = \
+        [   None,
+            None,
+            None,
+            None,
+            [   bugid,
+                [   value,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    2]]]
+    url=f"{ISSUETRACKER_URL}/action/issues/{bugid}/comment"
+    headers = {
+        'X-XSRF-Token': get_b7r_xsrf_token(),
+        'Content-Type': 'application/json',
+    }
+    json_payload = json.dumps(payload)
+
+    # Make the POST request with the JSON payload and X-XSRF-Token
+    response = glob.b7r_session.post(url, data=json_payload, headers=headers)
+
+    # Check if the request was successful (status code 200)
+    if response.status_code != 200:
+        raise click.ClickException(f"{response.status_code}")
+    return response
+
+def get_defrosted_resources_jspb(bugid, force=False):
+    global FIELDS
+    global x_xsrf_token
+
+    # Fetch buganizer page
+    url=f"{ISSUETRACKER_URL}/issues/{bugid}"
+    response = glob.b7r_session.get(url)
+
+    # Check if the request to the protected page was successful
+    if response.status_code != 200:
+        raise click.ClickException(
+            f"Error accessing: {response.status_code}")
+    
+    # Parse the HTML content using BeautifulSoup
+    buganizer = BeautifulSoup(response.text, 'html.parser')
+
+    # Find all script tags
+    tags = buganizer.find_all('script')
+
+    # Retrieve the xsrf-token if needed
+    if x_xsrf_token == "":
+        context = EvalJs({})
+        context.execute(tags[2].string)
+        jspb = context.buganizerSessionJspb
+        x_xsrf_token = jspb[2]
+    
+    # Find defrostedResourcesJspb where the meat is
+    if False:  # Assuming we know nothing...
+        jspb = None
+        for tag in tags:
+            content = tag.string
+            if content:
+                # Evaluate JavaScript code using js2py
+                context = EvalJs({})
+                context.execute(content)
+                try:
+                    jspb = context.defrostedResourcesJspb
+                    break
+                except Exception as e:
+                    if str(e) != "ReferenceError: "\
+                        "defrostedResourcesJspb is not defined":
+                        raise e 
+                        continue
+    else:  # ...but in fact we know where defrostedResourcesJspb resides
+        context = EvalJs({})
+        context.execute(tags[2].string)
+        jspb = context.defrostedResourcesJspb
+    return  jspb
+
+
 def get_b7r_fields(bugid, force=False):
     global FIELDS
+    global x_xsrf_token
 
     try:
         bug = next(b for b in B7rCache.bugs if b['bugid'] == bugid)
-        if not force: return bug
+        if not force:
+            bug['is_fresh'] = False
+            return bug
         B7rCache.bugs.remove(bug)
     except StopIteration:
         pass
@@ -314,8 +453,8 @@ def get_b7r_fields(bugid, force=False):
     }
 
     # Fetch buganizer page
-    url=f"{BUGANIZER_URL}/issues/{bugid}"
-    response = cookies.session.get(url)
+    url=f"{ISSUETRACKER_URL}/issues/{bugid}"
+    response = glob.b7r_session.get(url)
 
     # Check if the request to the protected page was successful
     if response.status_code != 200:
@@ -329,11 +468,11 @@ def get_b7r_fields(bugid, force=False):
     tags = buganizer.find_all('script')
 
     # Retrieve the xsrf-token if not already the case
-    if cookies.x_xsrf_token == "":
+    if x_xsrf_token == "":
         context = EvalJs({})
         context.execute(tags[2].string)
         jspb = context.buganizerSessionJspb
-        cookies.x_xsrf_token = jspb[2]
+        x_xsrf_token = jspb[2]
     
     # Find defrostedResourcesJspb where the meat is
     if False:  # Assuming we know nothing...
@@ -368,4 +507,5 @@ def get_b7r_fields(bugid, force=False):
     B7rCache.bugs.append(bug)
     # Persist the updated buganizer cache to disk.
     B7rCache.dump()
+    bug['is_fresh'] = True
     return bug

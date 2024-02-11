@@ -4,16 +4,31 @@ from hovo import state
 
 from enum import Enum
 
+docs_session = None
+b7r_session = None
+b7r_xsrf_token=""
+
+indicators = ''
+
 class Mission(Enum):
     ROW_MISSION = 1
 mission = None
 
+# This is the Google drive zip-export for the HOVO. We retrieve it first:
+html = None
+# This is the Google drive comments-export for the HOVO. We retrieve it second:
+comments = None
+# This is raw (curl-retrievable) HTML-version of the HOVO. We retrieve it third:
+raw = None
+# This is the Google docs version of the HOVO. We retrieve it last:
 doc = None
 contents = None
+
 warnings = 0
 steps = []
 dependencies = []
-Cmnts = []
+comments = []
+msgs_count = 0
 
 areasHeadingId = None
 durationHeadingId = None
